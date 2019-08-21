@@ -422,6 +422,20 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceMerge::createFromBson(
                                        targetCollectionVersion);
 }
 
+void DocumentSourceMerge::initialize() {
+    if (_targetCollectionVersion) {
+        return;  // If we know the version we're targeting we must have already detected that the
+                 // collection exists.
+    }
+    DocumentSourceWriteBlock writeBlock(pExpCtx->opCtx);
+
+    try {
+        pExpCtx->mongoProcessInterface->createCollection(pExpCtx, _outputNs, BSONObj());
+    } catch (const ExceptionFor<ErrorCodes::NamespaceExists>&) {
+        LOG(2) << "Attempted to create a collection that already exists. Ignoring.";
+    }
+}
+
 Value DocumentSourceMerge::serialize(boost::optional<ExplainOptions::Verbosity> explain) const {
     DocumentSourceMergeSpec spec;
     spec.setTargetNss(_outputNs);

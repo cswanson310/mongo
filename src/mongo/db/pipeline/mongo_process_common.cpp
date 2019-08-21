@@ -40,6 +40,7 @@
 #include "mongo/db/pipeline/expression_context.h"
 #include "mongo/db/service_context.h"
 #include "mongo/s/catalog_cache.h"
+#include "mongo/s/cluster_commands_helpers.h"
 #include "mongo/s/grid.h"
 #include "mongo/util/net/socket_utils.h"
 
@@ -179,6 +180,15 @@ std::set<FieldPath> MongoProcessCommon::_convertToFieldPaths(
                 res.second);
     }
     return fieldPaths;
+}
+
+void MongoProcessCommon::createCollection(const boost::intrusive_ptr<ExpressionContext>& expCtx,
+                                          const NamespaceString& nss,
+                                          BSONObj options) {
+    BSONObjBuilder cmdBuilder;
+    cmdBuilder.append("create", nss.coll());
+    cmdBuilder.appendElementsUnique(options);
+    mongo::createCollection(expCtx->opCtx, nss, cmdBuilder.obj());
 }
 
 }  // namespace mongo

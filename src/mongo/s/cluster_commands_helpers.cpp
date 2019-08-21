@@ -50,6 +50,7 @@
 #include "mongo/s/database_version_helpers.h"
 #include "mongo/s/grid.h"
 #include "mongo/s/multi_statement_transaction_requests_sender.h"
+#include "mongo/s/request_types/create_collection_gen.h"
 #include "mongo/s/request_types/create_database_gen.h"
 #include "mongo/s/shard_id.h"
 #include "mongo/s/stale_exception.h"
@@ -570,4 +571,35 @@ StatusWith<CachedCollectionRoutingInfo> getCollectionRoutingInfoForTxnCmd(
     return catalogCache->getCollectionRoutingInfoAt(opCtx, nss, atClusterTime.asTimestamp());
 }
 
+void createCollection(OperationContext* opCtx, const NamespaceString& nss, BSONObj cmdObj) {
+    createShardDatabase(opCtx, nss.db());
+
+    uassert(ErrorCodes::InvalidOptions,
+            "specify size:<n> when capped is true",
+            !cmdObj["capped"].trueValue() || cmdObj["size"].isNumber() ||
+                cmdObj.hasField("$nExtents"));
+
+    ConfigsvrCreateCollection configCreateCmd(nss);
+    configCreateCmd.setDbName(NamespaceString::kAdminDb);
+
+    {
+        BSONObjIterator cmdIter(cmdObj);
+        invariant(cmdIter.more());  // At least the command namespace should be present
+        cmdIter.next();
+        BSONObjBuilder optionsBuilder;
+        CommandHelpers::filterCommandRequestForPassthrough(&cmdIter, &optionsBuilder);
+        configCreateCmd.setOptions(optionsBuilder.obj());
+    }
+
+    const auto shardRegistry = Grid::get(opCtx)->shardRegistry();
+    auto response = shardRegistry->getConfigShard()->runCommandWithFixedRetryAttempts(
+        opCtx,
+        ReadPreferenceSetting{ReadPreference::PrimaryOnly},
+        "admin",
+        CommandHelpers::appendMajorityWriteConcern(
+            CommandHelpers::appendPassthroughFields(cmdObj, configCreateCmd.toBSON({}))),
+        Shard::RetryPolicy::kIdempotent);
+
+    uassertStatusOK(Shard::CommandResponse::getEffectiveStatus(response));
+}
 }  // namespace mongo

@@ -34,8 +34,6 @@
 #include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/commands.h"
 #include "mongo/s/cluster_commands_helpers.h"
-#include "mongo/s/grid.h"
-#include "mongo/s/request_types/create_collection_gen.h"
 
 namespace mongo {
 namespace {
@@ -72,36 +70,7 @@ public:
              const BSONObj& cmdObj,
              BSONObjBuilder& result) override {
         const NamespaceString nss(parseNs(dbName, cmdObj));
-
-        createShardDatabase(opCtx, dbName);
-
-        uassert(ErrorCodes::InvalidOptions,
-                "specify size:<n> when capped is true",
-                !cmdObj["capped"].trueValue() || cmdObj["size"].isNumber() ||
-                    cmdObj.hasField("$nExtents"));
-
-        ConfigsvrCreateCollection configCreateCmd(nss);
-        configCreateCmd.setDbName(NamespaceString::kAdminDb);
-
-        {
-            BSONObjIterator cmdIter(cmdObj);
-            invariant(cmdIter.more());  // At least the command namespace should be present
-            cmdIter.next();
-            BSONObjBuilder optionsBuilder;
-            CommandHelpers::filterCommandRequestForPassthrough(&cmdIter, &optionsBuilder);
-            configCreateCmd.setOptions(optionsBuilder.obj());
-        }
-
-        const auto shardRegistry = Grid::get(opCtx)->shardRegistry();
-        auto response = shardRegistry->getConfigShard()->runCommandWithFixedRetryAttempts(
-            opCtx,
-            ReadPreferenceSetting{ReadPreference::PrimaryOnly},
-            "admin",
-            CommandHelpers::appendMajorityWriteConcern(
-                CommandHelpers::appendPassthroughFields(cmdObj, configCreateCmd.toBSON({}))),
-            Shard::RetryPolicy::kIdempotent);
-
-        uassertStatusOK(Shard::CommandResponse::getEffectiveStatus(response));
+        createCollection(opCtx, nss, cmdObj);
         return true;
     }
 

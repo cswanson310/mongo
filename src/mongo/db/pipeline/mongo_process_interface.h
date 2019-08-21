@@ -416,6 +416,10 @@ public:
      */
     virtual std::pair<JsExecution*, bool> getJsExec(const BSONObj& scope) = 0;
     virtual void releaseJsExec() = 0;
+
+    virtual void createCollection(const boost::intrusive_ptr<ExpressionContext>&,
+                                  const NamespaceString&,
+                                  BSONObj options) = 0;
 };
 
 }  // namespace mongo

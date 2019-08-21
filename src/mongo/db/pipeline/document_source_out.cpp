@@ -128,16 +128,10 @@ void DocumentSourceOut::initialize() {
 
     // Create temp collection, copying options from the existing output collection if any.
     {
-        BSONObjBuilder cmd;
-        cmd << "create" << _tempNs.coll();
-        cmd << "temp" << true;
-        cmd.appendElementsUnique(_originalOutOptions);
-
-        BSONObj info;
-        uassert(16994,
-                "failed to create temporary {} collection '{}': {}"_format(
-                    kStageName, _tempNs.ns(), getStatusFromCommandResult(info).reason()),
-                conn->runCommand(outputNs.db().toString(), cmd.done(), info));
+        BSONObjBuilder opts;
+        opts << "temp" << true;
+        opts.appendElementsUnique(_originalOutOptions);
+        pExpCtx->mongoProcessInterface->createCollection(pExpCtx, _tempNs, opts.obj());
     }
 
     if (_originalIndexes.empty()) {

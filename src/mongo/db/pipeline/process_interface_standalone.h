@@ -170,6 +170,10 @@ public:
         _jsExec.reset();
     }
 
+    void createCollection(const boost::intrusive_ptr<ExpressionContext>&,
+                          const NamespaceString&,
+                          BSONObj options) override;
+
 protected:
     BSONObj _reportCurrentOpForClient(OperationContext* opCtx,
                                       Client* client,

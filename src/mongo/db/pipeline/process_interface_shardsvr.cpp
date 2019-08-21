@@ -124,6 +124,7 @@ Status MongoInterfaceShardServer::insert(const boost::intrusive_ptr<ExpressionCo
 
     // If applicable, attach a write concern to the batched command request.
     attachWriteConcern(&insertCommand, wc);
+    insertCommand.setAllowImplicitCreate(false);
 
     ClusterWriter::write(expCtx->opCtx, insertCommand, &stats, &response, targetEpoch);
 
@@ -145,6 +146,7 @@ StatusWith<MongoProcessInterface::UpdateResult> MongoInterfaceShardServer::updat
 
     // If applicable, attach a write concern to the batched command request.
     attachWriteConcern(&updateCommand, wc);
+    updateCommand.setAllowImplicitCreate(false);
 
     ClusterWriter::write(expCtx->opCtx, updateCommand, &stats, &response, targetEpoch);
 

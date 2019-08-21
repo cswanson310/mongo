@@ -143,6 +143,12 @@ public:
     static boost::intrusive_ptr<DocumentSource> createFromBson(
         BSONElement elem, const boost::intrusive_ptr<ExpressionContext>& pExpCtx);
 
+protected:
+    /**
+     * Creates the collection we will be writing to if necessary.
+     */
+    void initialize() final;
+
 private:
     /**
      * Builds a new $merge stage which will merge all documents into 'outputNs'. If

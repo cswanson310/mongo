@@ -246,5 +246,12 @@ public:
         MONGO_UNREACHABLE;
     }
     void releaseJsExec() {}
-};
+
+    void createCollection(const boost::intrusive_ptr<ExpressionContext>& expCtx,
+                          const NamespaceString& nss,
+                          BSONObj options) final {
+        MONGO_UNREACHABLE;
+    }
+
+};  // namespace mongo
 }  // namespace mongo

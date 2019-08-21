@@ -241,6 +241,7 @@ env.Library(
         '$BUILD_DIR/mongo/db/session_catalog',
         '$BUILD_DIR/mongo/db/storage/backup_cursor_hooks',
         '$BUILD_DIR/mongo/db/transaction',
+        '$BUILD_DIR/mongo/db/catalog/catalog_helpers',
         '$BUILD_DIR/mongo/scripting/scripting_common',
     ],
 )
