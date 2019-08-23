@@ -150,6 +150,10 @@ public:
                                            boost::optional<ChunkVersion> targetCollectionVersion,
                                            const NamespaceString& outputNs) const override;
 
+    void createCollection(const boost::intrusive_ptr<ExpressionContext>&,
+                          const NamespaceString&,
+                          BSONObj options) override;
+
 protected:
     BSONObj _reportCurrentOpForClient(OperationContext* opCtx,
                                       Client* client,

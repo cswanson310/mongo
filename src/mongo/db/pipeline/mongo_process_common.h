@@ -67,6 +67,10 @@ public:
         const boost::intrusive_ptr<ExpressionContext>& expCtx,
         const NamespaceString& nss) const final;
 
+    void createCollection(const boost::intrusive_ptr<ExpressionContext>&,
+                          const NamespaceString&,
+                          BSONObj options) override;
+
 protected:
     /**
      * Converts the fields from a ShardKeyPattern to a vector of FieldPaths, including the _id if

@@ -36,6 +36,7 @@
 #include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/catalog/collection.h"
 #include "mongo/db/catalog/collection_catalog.h"
+#include "mongo/db/catalog/create_collection.h"
 #include "mongo/db/catalog/database_holder.h"
 #include "mongo/db/catalog/document_validation.h"
 #include "mongo/db/catalog/index_catalog_entry.h"
@@ -657,6 +658,17 @@ MongoInterfaceStandalone::ensureFieldsUniqueOrResolveDocumentKey(
                 fieldsHaveSupportingUniqueIndex(expCtx, outputNs, fieldPaths));
     }
     return {fieldPaths, targetCollectionVersion};
+}
+
+void MongoInterfaceStandalone::createCollection(
+    const boost::intrusive_ptr<ExpressionContext>& expCtx,
+    const NamespaceString& nss,
+    BSONObj options) {
+    BSONObjBuilder cmdBuilder;
+    cmdBuilder.append("create", nss.coll());
+    cmdBuilder.appendElementsUnique(options);
+    return uassertStatusOK(
+        mongo::createCollection(expCtx->opCtx, nss.db().toString(), cmdBuilder.obj()));
 }
 
 }  // namespace mongo

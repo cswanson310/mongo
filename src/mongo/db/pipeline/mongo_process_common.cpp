@@ -44,6 +44,7 @@
 #include "mongo/platform/atomic_word.h"
 #include "mongo/platform/mutex.h"
 #include "mongo/s/catalog_cache.h"
+#include "mongo/s/cluster_commands_helpers.h"
 #include "mongo/s/grid.h"
 #include "mongo/util/diagnostic_info.h"
 #include "mongo/util/log.h"
@@ -193,6 +194,15 @@ std::set<FieldPath> MongoProcessCommon::_convertToFieldPaths(
                 res.second);
     }
     return fieldPaths;
+}
+
+void MongoProcessCommon::createCollection(const boost::intrusive_ptr<ExpressionContext>& expCtx,
+                                          const NamespaceString& nss,
+                                          BSONObj options) {
+    BSONObjBuilder cmdBuilder;
+    cmdBuilder.append("create", nss.coll());
+    cmdBuilder.appendElementsUnique(options);
+    mongo::createCollection(expCtx->opCtx, nss, cmdBuilder.obj());
 }
 
 }  // namespace mongo

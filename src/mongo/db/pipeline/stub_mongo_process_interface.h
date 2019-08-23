@@ -235,5 +235,11 @@ public:
         }
         return {fieldPaths, targetCollectionVersion};
     }
+
+    void createCollection(const boost::intrusive_ptr<ExpressionContext>& expCtx,
+                          const NamespaceString& nss,
+                          BSONObj options) final {
+        MONGO_UNREACHABLE;
+    }
 };
 }  // namespace mongo

@@ -399,6 +399,10 @@ public:
                                            boost::optional<std::vector<std::string>> fields,
                                            boost::optional<ChunkVersion> targetCollectionVersion,
                                            const NamespaceString& outputNs) const = 0;
+
+    virtual void createCollection(const boost::intrusive_ptr<ExpressionContext>&,
+                                  const NamespaceString&,
+                                  BSONObj options) = 0;
 };
 
 }  // namespace mongo

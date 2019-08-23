@@ -223,4 +223,8 @@ std::set<ShardId> getTargetedShardsForQuery(OperationContext* opCtx,
 StatusWith<CachedCollectionRoutingInfo> getCollectionRoutingInfoForTxnCmd(
     OperationContext* opCtx, const NamespaceString& nss);
 
+/**
+ * TODO
+ */
+void createCollection(OperationContext* opCtx, const NamespaceString&, BSONObj cmdObj);
 }  // namespace mongo
