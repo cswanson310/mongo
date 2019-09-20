@@ -133,6 +133,11 @@ void ExpressionContext::checkForInterrupt() {
     }
 }
 
+bool ExpressionContext::hasSlowQueryDeadlineExpired() {
+    invariant(opCtx);
+    return opCtx->hasSlowQueryDeadlineExpired();
+}
+
 ExpressionContext::CollatorStash::CollatorStash(
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
     std::unique_ptr<CollatorInterface> newCollator)

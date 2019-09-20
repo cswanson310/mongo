@@ -122,11 +122,11 @@ bool canOptimizeAwayPipeline(const Pipeline* pipeline,
  * namespace used in the returned cursor, which will be registered with the global cursor manager,
  * and thus will be different from that in 'request'.
  */
-bool handleCursorCommand(OperationContext* opCtx,
-                         const NamespaceString& nsForCursor,
-                         std::vector<ClientCursor*> cursors,
-                         const AggregationRequest& request,
-                         rpc::ReplyBuilderInterface* result) {
+std::pair<bool, bool> handleCursorCommand(OperationContext* opCtx,
+                                          const NamespaceString& nsForCursor,
+                                          std::vector<ClientCursor*> cursors,
+                                          const AggregationRequest& request,
+                                          rpc::ReplyBuilderInterface* result) {
     invariant(!cursors.empty());
     long long batchSize = request.getBatchSize();
 
@@ -159,7 +159,7 @@ bool handleCursorCommand(OperationContext* opCtx,
         auto bodyBuilder = result->getBodyBuilder();
         bodyBuilder.appendArray("cursors", cursorsBuilder.obj());
 
-        return true;
+        return std::pair(true, false);
     }
 
     CursorResponseBuilder::Options options;
@@ -174,6 +174,7 @@ bool handleCursorCommand(OperationContext* opCtx,
 
     BSONObj next;
     bool stashedResult = false;
+    bool buildStats = false;
     for (int objCount = 0; objCount < batchSize; objCount++) {
         // The initial getNext() on a PipelineProxyStage may be very expensive so we don't
         // do it when batchSize is 0 since that indicates a desire for a fast return.
@@ -196,6 +197,12 @@ bool handleCursorCommand(OperationContext* opCtx,
                 cursor = nullptr;
                 exec = nullptr;
             }
+            break;
+        }
+
+        if (state == PlanExecutor::PAUSED) {
+            // Nothing to enqueue;
+            buildStats = true;
             break;
         }
 
@@ -239,8 +246,10 @@ bool handleCursorCommand(OperationContext* opCtx,
 
         // Cursor needs to be in a saved state while we yield locks for getmore. State
         // will be restored in getMore().
-        exec->saveState();
-        exec->detachFromOperationContext();
+        if (!buildStats) {
+            exec->saveState();
+            exec->detachFromOperationContext();
+        }
     } else {
         curOp->debug().cursorExhausted = true;
     }
@@ -248,7 +257,7 @@ bool handleCursorCommand(OperationContext* opCtx,
     const CursorId cursorId = cursor ? cursor->cursorid() : 0LL;
     responseBuilder.done(cursorId, nsForCursor.ns());
 
-    return static_cast<bool>(cursor);
+    return std::pair(static_cast<bool>(cursor), (buildStats) ? true : false);
 }
 
 StatusWith<StringMap<ExpressionContext::ResolvedNamespace>> resolveInvolvedNamespaces(
@@ -755,11 +764,22 @@ Status runAggregate(OperationContext* opCtx,
         }
     } else {
         // Cursor must be specified, if explain is not.
-        const bool keepCursor =
-            handleCursorCommand(opCtx, origNss, std::move(cursors), request, result);
+        auto curRes = handleCursorCommand(opCtx, origNss, std::move(cursors), request, result);
+        const bool keepCursor = curRes.first;
         if (keepCursor) {
             cursorFreer.dismiss();
         }
+
+        // Append the stats
+        if (curRes.second) {
+            auto explainExecutor = pins[0].getCursor()->getExecutor();
+            auto bodyBuilder = result->getBodyBuilder();
+            Explain::explainPipelineExecutor(
+                explainExecutor, ExplainOptions::Verbosity::kExecStats, &bodyBuilder);
+            explainExecutor->saveState();
+            explainExecutor->detachFromOperationContext();
+        }
+
 
         PlanSummaryStats stats;
         Explain::getSummaryStats(*(pins[0].getCursor()->getExecutor()), &stats);

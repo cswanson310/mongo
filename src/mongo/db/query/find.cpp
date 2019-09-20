@@ -113,7 +113,7 @@ bool shouldSaveCursorGetMore(PlanExecutor::ExecState finalState,
         return false;
     }
 
-    if (isTailable) {
+    if (isTailable || PlanExecutor::PAUSED == finalState) {
         return true;
     }
 

@@ -80,6 +80,9 @@ void CursorResponseBuilder::done(CursorId cursorId, StringData cursorNamespace) 
     }
     _cursorObject->append(kIdField, cursorId);
     _cursorObject->append(kNsField, cursorNamespace);
+    if (_execStats) {
+        _cursorObject->appendAs(_execStats->firstElement(), "stages");
+    }
     _cursorObject.reset();
 
     _bodyBuilder.reset();

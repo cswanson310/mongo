@@ -116,7 +116,9 @@ public:
      * Converts the PlanExecutor's winning plan stats tree to BSON and returns the result through
      * the out-parameter 'bob'.
      */
-    static void getWinningPlanStats(const PlanExecutor* exec, BSONObjBuilder* bob);
+    static void getWinningPlanStats(const PlanExecutor* exec,
+                                    BSONObjBuilder* bob,
+                                    OperationContext* opCtx = nullptr);
 
     /**
      * Converts the stats tree 'stats' into a corresponding BSON object containing

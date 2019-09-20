@@ -307,6 +307,8 @@ public:
      */
     void setDeadlineByDate(Date_t when, ErrorCodes::Error timeoutError);
 
+    void setSlowQueryDeadlineByDate(Date_t when);
+
     /**
      * Sets the deadline for this operation to the maxTime plus the current time reported
      * by the ServiceContext's fast clock source.
@@ -324,6 +326,18 @@ public:
         }
     }
 
+    void setSlowQueryDeadlineAfterNowBy(Microseconds maxTime);
+    template <typename D>
+    void setSlowQueryDeadlineAfterNowBy(D maxTime) {
+        if (maxTime <= D::zero()) {
+            maxTime = D::zero();
+        }
+        if (maxTime <= Microseconds::max()) {
+            setSlowQueryDeadlineAfterNowBy(duration_cast<Microseconds>(maxTime));
+        } else {
+            setSlowQueryDeadlineByDate(Date_t::max());
+        }
+    }
     /**
      * Returns the deadline for this operation, or Date_t::max() if there is no deadline.
      */
@@ -331,6 +345,9 @@ public:
         return _deadline;
     }
 
+    Date_t getSlowQueryDeadline() const override {
+        return _slowQueryDeadline;
+    }
     /**
      * Returns the error code used when this operation's time limit is reached.
      */
@@ -373,6 +390,7 @@ public:
     void setInMultiDocumentTransaction() {
         _inMultiDocumentTransaction = true;
     }
+    bool hasSlowQueryDeadlineExpired() const;
 
 private:
     IgnoreInterruptsState pushIgnoreInterrupts() override {
@@ -428,6 +446,8 @@ private:
      * these correctly correspond.
      */
     void setDeadlineAndMaxTime(Date_t when, Microseconds maxTime, ErrorCodes::Error timeoutError);
+
+    void setSlowQueryDeadlineAndMaxTime(Date_t when, Microseconds maxTime);
 
     /**
      * Compute maxTime based on the given deadline.
@@ -492,6 +512,10 @@ private:
     // _deadline and the service context's fast clock are the only values consulted for determining
     // if the operation's timelimit has been exceeded.
     Microseconds _maxTime = Microseconds::max();
+
+
+    Date_t _slowQueryDeadline = Date_t::max();
+    Microseconds _slowQueryMaxTime = Microseconds::max();
 
     // Timer counting the elapsed time since the construction of this OperationContext.
     Timer _elapsedTime;

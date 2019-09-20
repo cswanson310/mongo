@@ -158,7 +158,13 @@ public:
             // future. If a DocumentSource retrieves this status from its child, it must propagate
             // it without doing any further work.
             kPauseExecution,
+            // No ouput, propogate to top.
+            kSlowQueryPauseExecution,
         };
+
+        static GetNextResult makeSlowQueryPauseExecution() {
+            return GetNextResult(ReturnStatus::kSlowQueryPauseExecution);
+        }
 
         static GetNextResult makeEOF() {
             return GetNextResult(ReturnStatus::kEOF);
@@ -208,6 +214,10 @@ public:
 
         bool isPaused() const {
             return _status == ReturnStatus::kPauseExecution;
+        }
+
+        bool isSlowQueryPauseExecution() const {
+            return _status == ReturnStatus::kSlowQueryPauseExecution;
         }
 
     private:
@@ -467,6 +477,26 @@ public:
         return false;
     }
 
+    virtual void buildStats(boost::optional<ExplainOptions::Verbosity> verbosity,
+                            BSONObjBuilder* out) const {
+        BSONObjBuilder bob(out->subobjStart("executionStats"));
+
+        if (verbosity.get() >= ExplainOptions::Verbosity::kExecStats) {
+            bob.appendNumber("nReturned", _commonStats.advanced);
+            bob.appendNumber("executionTimeMillisEstimate", _commonStats.executionTimeMillis);
+            bob.appendNumber("works", _commonStats.works);
+            bob.appendNumber("advanced", _commonStats.advanced);
+            bob.appendNumber("needTime", _commonStats.needTime);
+            bob.appendNumber("needYield", _commonStats.needYield);
+            bob.appendNumber("saveState", _commonStats.yields);
+            bob.appendNumber("restoreState", _commonStats.unyields);
+            if (_commonStats.failed)
+                bob.appendBool("failed", _commonStats.failed);
+            bob.appendNumber("isEOF", _commonStats.isEOF);
+        }
+        bob.doneFast();
+    }
+
 protected:
     DocumentSource(const StringData stageName,
                    const boost::intrusive_ptr<ExpressionContext>& pExpCtx);
@@ -511,9 +541,9 @@ protected:
 
     boost::intrusive_ptr<ExpressionContext> pExpCtx;
 
-private:
     CommonStats _commonStats;
 
+private:
     /**
      * Create a Value that represents the document source.
      *

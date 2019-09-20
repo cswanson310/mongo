@@ -239,7 +239,7 @@ public:
     /**
      * Returns the next result from the pipeline, or boost::none if there are no more results.
      */
-    boost::optional<Document> getNext();
+    boost::optional<Document> getNext(bool* isSlowQuery = NULL);
 
     /**
      * Write the pipeline's operators to a std::vector<Value>, providing the level of detail

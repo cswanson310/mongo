@@ -110,6 +110,9 @@ PlanStage::StageState TrialStage::_workTrialPlan(WorkingSetID* out) {
     PlanStage::StageState state = child()->work(out);
 
     switch (state) {
+        case PlanStage::SLOW_QUERY_NEED_TIME: {
+            MONGO_UNREACHABLE
+        }
         case PlanStage::ADVANCED: {
             // We need to cache results until the trial is complete. Ensure the BSONObj underlying
             // the WorkingSetMember is owned, and set the return state to NEED_TIME so that we do

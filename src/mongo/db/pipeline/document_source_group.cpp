@@ -26,7 +26,6 @@
  *    exception statement from all source files in the program, then also delete
  *    it in the license file.
  */
-
 #include "mongo/platform/basic.h"
 
 #include <boost/filesystem/operations.hpp>
@@ -254,6 +253,13 @@ Value DocumentSourceGroup::serialize(boost::optional<ExplainOptions::Verbosity> 
         insides["$doingMerge"] = Value(true);
     }
 
+    BSONObjBuilder explainStatsBuilder;
+    buildStats(explain, &explainStatsBuilder);
+    BSONObj explainStats = explainStatsBuilder.obj();
+
+    invariant(explainStats["executionStats"]);
+    insides["executionStats"] = Value(explainStats["executionStats"]);
+
     return Value(DOC(getSourceName() << insides.freeze()));
 }
 
@@ -471,6 +477,7 @@ DocumentSource::GetNextResult DocumentSourceGroup::initialize() {
     // Barring any pausing, this loop exhausts 'pSource' and populates '_groups'.
     GetNextResult input = pSource->getNext();
     for (; input.isAdvanced(); input = pSource->getNext()) {
+        ++_commonStats.needTime;
         if (_memoryUsageBytes > _maxMemoryUsageBytes) {
             uassert(16945,
                     "Exceeded memory limit for $group, but didn't allow external sort."
@@ -531,6 +538,9 @@ DocumentSource::GetNextResult DocumentSourceGroup::initialize() {
     }
 
     switch (input.getStatus()) {
+        case DocumentSource::GetNextResult::ReturnStatus::kSlowQueryPauseExecution: {
+            MONGO_UNREACHABLE;  // We consumed all advances above.
+        }
         case DocumentSource::GetNextResult::ReturnStatus::kAdvanced: {
             MONGO_UNREACHABLE;  // We consumed all advances above.
         }

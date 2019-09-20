@@ -91,7 +91,7 @@ protected:
                        WorkingSet* ws,
                        const char* stageTypeName);
 
-    virtual boost::optional<Document> getNext();
+    virtual boost::optional<Document> getNext(bool* isSlowQuery = NULL);
     void doDispose() final;
 
     // Items in the _stash should be returned before pulling items from _pipeline.

@@ -77,7 +77,7 @@ public:
     }
 
 protected:
-    boost::optional<Document> getNext() final;
+    boost::optional<Document> getNext(bool* isSlowQuery = NULL) final;
 
 private:
     /**

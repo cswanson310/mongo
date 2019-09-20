@@ -26,7 +26,6 @@
  *    exception statement from all source files in the program, then also delete
  *    it in the license file.
  */
-
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/exec/pipeline_proxy.h"
@@ -81,7 +80,11 @@ PlanStage::StageState PipelineProxyStage::doWork(WorkingSetID* out) {
         return PlanStage::ADVANCED;
     }
 
-    if (auto next = getNext()) {
+    bool isSlowQuery;
+    auto next = getNext(&isSlowQuery);
+    if (isSlowQuery)
+        return PlanStage::SLOW_QUERY_NEED_TIME;
+    if (next) {
         *out = _ws->allocate();
         WorkingSetMember* member = _ws->get(*out);
         if (_includeMetaData && next->metadata()) {
@@ -99,7 +102,8 @@ bool PipelineProxyStage::isEOF() {
     if (!_stash.empty())
         return false;
 
-    if (auto next = getNext()) {
+    bool isSlowQuery;
+    if (auto next = getNext(&isSlowQuery)) {
         _stash.emplace_back(*next);
         return false;
     }
@@ -126,8 +130,8 @@ unique_ptr<PlanStageStats> PipelineProxyStage::getStats() {
     return ret;
 }
 
-boost::optional<Document> PipelineProxyStage::getNext() {
-    return _pipeline->getNext();
+boost::optional<Document> PipelineProxyStage::getNext(bool* isSlowQuery) {
+    return _pipeline->getNext(isSlowQuery);
 }
 
 std::string PipelineProxyStage::getPlanSummaryStr() const {

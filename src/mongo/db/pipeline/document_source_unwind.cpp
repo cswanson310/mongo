@@ -214,11 +214,15 @@ DocumentSource::GetModPathsReturn DocumentSourceUnwind::getModifiedPaths() const
 }
 
 Value DocumentSourceUnwind::serialize(boost::optional<ExplainOptions::Verbosity> explain) const {
-    return Value(DOC(getSourceName() << DOC(
-                         "path" << _unwindPath.fullPathWithPrefix() << "preserveNullAndEmptyArrays"
-                                << (_preserveNullAndEmptyArrays ? Value(true) : Value())
-                                << "includeArrayIndex"
-                                << (_indexPath ? Value((*_indexPath).fullPath()) : Value()))));
+    BSONObjBuilder explainStatsBuilder;
+    buildStats(explain, &explainStatsBuilder);
+    BSONObj explainStats = explainStatsBuilder.obj();
+    return Value(
+        DOC(getSourceName() << DOC(
+                "path" << _unwindPath.fullPathWithPrefix() << "preserveNullAndEmptyArrays"
+                       << (_preserveNullAndEmptyArrays ? Value(true) : Value()) << "executionStats"
+                       << Value(explainStats["executionStats"]) << "includeArrayIndex"
+                       << (_indexPath ? Value((*_indexPath).fullPath()) : Value()))));
 }
 
 DepsTracker::State DocumentSourceUnwind::getDependencies(DepsTracker* deps) const {

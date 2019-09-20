@@ -168,6 +168,7 @@ public:
         // Any class implementing this interface must set the WSID out parameter to
         // INVALID_ID or a valid WSM ID if FAILURE is returned.
         FAILURE,
+        SLOW_QUERY_NEED_TIME,
     };
 
     static std::string stateStr(const StageState& state) {

@@ -103,6 +103,8 @@ public:
      */
     static StatusWith<int> parseMaxTimeMS(BSONElement maxTimeMSElt);
 
+    static StatusWith<int> parseSlowQueryMS(BSONElement maxTimeMSElt);
+
     /**
      * Helper function to identify text search sort key
      * Example: {a: {$meta: "textScore"}}
@@ -130,6 +132,7 @@ public:
     // Names of the maxTimeMS command and query option.
     // Char arrays because they are used in static initialization.
     static const char cmdOptionMaxTimeMS[];
+    static const char cmdOptionSlowQueryMS[];
     static const char queryOptionMaxTimeMS[];
 
     // Names of the $meta projection values.

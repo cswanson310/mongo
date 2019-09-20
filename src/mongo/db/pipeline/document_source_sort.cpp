@@ -92,17 +92,29 @@ DocumentSource::GetNextResult DocumentSourceSort::doGetNext() {
 void DocumentSourceSort::serializeToArray(
     std::vector<Value>& array, boost::optional<ExplainOptions::Verbosity> explain) const {
     uint64_t limit = _sortExecutor->getLimit();
+    BSONObjBuilder explainStatsBuilder;
+    buildStats(explain, &explainStatsBuilder);
+    BSONObj explainStats = explainStatsBuilder.obj();
+
+    invariant(explainStats["executionStats"]);
     if (explain) {  // always one Value for combined $sort + $limit
         array.push_back(Value(DOC(
-            kStageName << DOC("sortKey"
-                              << _sortExecutor->sortPattern().serialize(
-                                     SortPattern::SortKeySerialization::kForExplain)
-                              << "limit"
-                              << (_sortExecutor->hasLimit() ? Value(static_cast<long long>(limit))
-                                                            : Value())))));
+            kStageName << DOC(
+                "sortKey" << _sortExecutor->sortPattern().serialize(
+                                 SortPattern::SortKeySerialization::kForExplain)
+                          << "executionStats" << Value(explainStats["executionStats"]) << "limit"
+                          << (_sortExecutor->hasLimit() ? Value(static_cast<long long>(limit))
+                                                        : Value())))));
     } else {  // one Value for $sort and maybe a Value for $limit
         MutableDocument inner(_sortExecutor->sortPattern().serialize(
             SortPattern::SortKeySerialization::kForPipelineSerialization));
+        BSONObjBuilder explainStatsBuilder;
+        buildStats(explain, &explainStatsBuilder);
+        BSONObj explainStats = explainStatsBuilder.obj();
+
+        invariant(explainStats["executionStats"]);
+        inner["executionStats"] = Value(explainStats["executionStats"]);
+
         array.push_back(Value(DOC(kStageName << inner.freeze())));
 
         if (_sortExecutor->hasLimit()) {
@@ -185,6 +197,7 @@ intrusive_ptr<DocumentSourceSort> DocumentSourceSort::create(
 DocumentSource::GetNextResult DocumentSourceSort::populate() {
     auto nextInput = pSource->getNext();
     for (; nextInput.isAdvanced(); nextInput = pSource->getNext()) {
+        ++_commonStats.needTime;
         loadDocument(nextInput.releaseDocument());
     }
     if (nextInput.isEOF()) {

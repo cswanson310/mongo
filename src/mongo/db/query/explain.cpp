@@ -26,7 +26,6 @@
  *    exception statement from all source files in the program, then also delete
  *    it in the license file.
  */
-
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/query/explain.h"
@@ -635,9 +634,15 @@ BSONObj Explain::getWinningPlanStats(const PlanExecutor* exec) {
 }
 
 // static
-void Explain::getWinningPlanStats(const PlanExecutor* exec, BSONObjBuilder* bob) {
+void Explain::getWinningPlanStats(const PlanExecutor* exec,
+                                  BSONObjBuilder* bob,
+                                  OperationContext* opCtx) {
     unique_ptr<PlanStageStats> winningStats = getWinningPlanStatsTree(exec);
-    statsToBSON(*winningStats, ExplainOptions::Verbosity::kExecStats, bob, bob);
+    long long totalTimeMillis = durationCount<Milliseconds>(CurOp::get(opCtx)->elapsedTimeTotal());
+    BSONObjBuilder execBob(bob->subobjStart("executionStatsGGG"));
+    generateSinglePlanExecutionInfo(
+        winningStats.get(), ExplainOptions::Verbosity::kExecStats, totalTimeMillis, &execBob);
+    // statsToBSON(*winningStats, ExplainOptions::Verbosity::kExecStats, bob, bob);
 }
 
 // static
@@ -872,7 +877,7 @@ void Explain::explainPipelineExecutor(PlanExecutor* exec,
     if (verbosity >= ExplainOptions::Verbosity::kExecStats) {
         // TODO SERVER-32732: An execution error should be reported in explain, but should not
         // cause the explain itself to fail.
-        uassertStatusOK(exec->executePlan());
+        // uassertStatusOK(exec->executePlan());
     }
 
     *out << "stages" << Value(pps->writeExplainOps(verbosity));
@@ -887,18 +892,19 @@ void Explain::explainStages(PlanExecutor* exec,
     auto winningPlanTrialStats = Explain::getWinningPlanTrialStats(exec);
 
     Status executePlanStatus = Status::OK();
+    /*
+        // If we need execution stats, then run the plan in order to gather the stats.
+        if (verbosity >= ExplainOptions::Verbosity::kExecStats) {
+            executePlanStatus = exec->executePlan();
 
-    // If we need execution stats, then run the plan in order to gather the stats.
-    if (verbosity >= ExplainOptions::Verbosity::kExecStats) {
-        executePlanStatus = exec->executePlan();
-
-        // If executing the query failed because it was killed, then the collection may no longer be
-        // valid. We indicate this by setting our collection pointer to null.
-        if (executePlanStatus == ErrorCodes::QueryPlanKilled) {
-            collection = nullptr;
+            // If executing the query failed because it was killed, then the collection may no
+       longer be
+            // valid. We indicate this by setting our collection pointer to null.
+            if (executePlanStatus == ErrorCodes::QueryPlanKilled) {
+                collection = nullptr;
+            }
         }
-    }
-
+    */
     explainStages(exec,
                   collection,
                   verbosity,

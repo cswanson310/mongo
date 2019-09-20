@@ -143,6 +143,8 @@ public:
      */
     void checkForInterrupt();
 
+    bool hasSlowQueryDeadlineExpired();
+
     /**
      * Returns true if this is a collectionless aggregation on the specified database.
      */

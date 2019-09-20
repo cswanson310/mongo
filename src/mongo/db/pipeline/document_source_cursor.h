@@ -186,6 +186,8 @@ protected:
      */
     virtual Document transformBSONObjToDocument(const BSONObj& obj) const;
 
+    void buildExplainStats(boost::optional<ExplainOptions::Verbosity> verbosity);
+
 private:
     /**
      * Acquires the appropriate locks, then destroys and de-registers '_exec'. '_exec' must be
@@ -231,6 +233,7 @@ private:
 
     std::string _planSummary;
     PlanSummaryStats _planSummaryStats;
+    BSONObj _saveExplainStats;
 
     // Used only for explain() queries. Stores the stats of the winning plan when _exec's root
     // stage is a MultiPlanStage. When the query is executed (with exec->executePlan()), it will

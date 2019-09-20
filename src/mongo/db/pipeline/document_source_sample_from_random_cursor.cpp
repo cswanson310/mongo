@@ -124,6 +124,9 @@ DocumentSource::GetNextResult DocumentSourceSampleFromRandomCursor::getNextNonDu
                        << nextInput.getDocument().toString();
                 break;  // Try again with the next document.
             }
+            case GetNextResult::ReturnStatus::kSlowQueryPauseExecution: {
+                MONGO_UNREACHABLE;
+            }
             case GetNextResult::ReturnStatus::kPauseExecution: {
                 MONGO_UNREACHABLE;  // Our input should be a random cursor, which should never
                                     // result in kPauseExecution.

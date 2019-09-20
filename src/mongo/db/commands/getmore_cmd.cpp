@@ -308,6 +308,13 @@ public:
                     nextBatch->abandon();
                     return status;
                 }
+                case PlanExecutor::PAUSED: {
+                    BSONObjBuilder bob;
+                    Explain::explainPipelineExecutor(
+                        exec, ExplainOptions::Verbosity::kExecStats, &bob);
+                    nextBatch->addExplainMetrics(bob.done());
+                    return Status::OK();
+                }
                 case PlanExecutor::IS_EOF:
                     // The latest oplog timestamp may advance even when there are no results. Ensure
                     // that we have the latest postBatchResumeToken produced by the plan executor.

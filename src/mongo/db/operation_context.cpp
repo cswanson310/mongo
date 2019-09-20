@@ -101,6 +101,15 @@ void OperationContext::setDeadlineAndMaxTime(Date_t when,
     _timeoutError = timeoutError;
 }
 
+void OperationContext::setSlowQueryDeadlineAndMaxTime(Date_t when, Microseconds maxTime) {
+    invariant(!getClient()->isInDirectClient());
+    uassert(51254,
+            "Illegal attempt to change slowQuery  deadline",
+            _hasArtificialDeadline || !hasSlowQueryDeadline());
+    _slowQueryDeadline = when;
+    _slowQueryMaxTime = maxTime;
+}
+
 Microseconds OperationContext::computeMaxTimeFromDeadline(Date_t when) {
     Microseconds maxTime;
     if (when == Date_t::max()) {
@@ -135,6 +144,27 @@ void OperationContext::setDeadlineAfterNowBy(Microseconds maxTime, ErrorCodes::E
     setDeadlineAndMaxTime(when, maxTime, timeoutError);
 }
 
+void OperationContext::setSlowQueryDeadlineByDate(Date_t when) {
+    setSlowQueryDeadlineAndMaxTime(when, computeMaxTimeFromDeadline(when));
+}
+
+void OperationContext::setSlowQueryDeadlineAfterNowBy(Microseconds maxTime) {
+    Date_t when;
+    if (maxTime < Microseconds::zero()) {
+        maxTime = Microseconds::zero();
+    }
+    if (maxTime == Microseconds::max()) {
+        when = Date_t::max();
+    } else {
+        auto clock = getServiceContext()->getFastClockSource();
+        when = clock->now();
+        if (maxTime > Microseconds::zero()) {
+            when += clock->getPrecision() + maxTime;
+        }
+    }
+    setSlowQueryDeadlineAndMaxTime(when, maxTime);
+}
+
 bool OperationContext::hasDeadlineExpired() const {
     if (!hasDeadline()) {
         return false;
@@ -154,6 +184,21 @@ bool OperationContext::hasDeadlineExpired() const {
 
     const auto now = getServiceContext()->getFastClockSource()->now();
     return now >= getDeadline();
+}
+
+bool OperationContext::hasSlowQueryDeadlineExpired() const {
+    if (!hasSlowQueryDeadline()) {
+        return false;
+    }
+
+    // TODO: Remove once all OperationContexts are properly connected to Clients and ServiceContexts
+    // in tests.
+    if (MONGO_unlikely(!getClient() || !getServiceContext())) {
+        return false;
+    }
+
+    const auto now = getServiceContext()->getFastClockSource()->now();
+    return now >= getSlowQueryDeadline();
 }
 
 ErrorCodes::Error OperationContext::getTimeoutError() const {
@@ -211,6 +256,11 @@ Status OperationContext::checkForInterruptNoAssert() noexcept {
         }
         return Status(_timeoutError, "operation exceeded time limit");
     }
+    /*
+        if (hasSlowQueryDeadlineExpired()) {
+            return Status(ErrorCodes::SlowQuery, "operation exceeded slow query time limit");
+        }
+     */
 
     if (_ignoreInterrupts) {
         return Status::OK();

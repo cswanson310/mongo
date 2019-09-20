@@ -50,7 +50,7 @@ ChangeStreamProxyStage::ChangeStreamProxyStage(OperationContext* opCtx,
     _latestOplogTimestamp = ResumeToken::parse(_postBatchResumeToken).getData().clusterTime;
 }
 
-boost::optional<Document> ChangeStreamProxyStage::getNext() {
+boost::optional<Document> ChangeStreamProxyStage::getNext(bool* isSlowQuery) {
     if (auto next = _pipeline->getNext()) {
         // While we have more results to return, we track both the timestamp and the resume token of
         // the latest event observed in the oplog, the latter via its sort key metadata field.

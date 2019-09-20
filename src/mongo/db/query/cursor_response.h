@@ -91,6 +91,10 @@ public:
         _postBatchResumeToken = token.getOwned();
     }
 
+    void addExplainMetrics(BSONObj obj) {
+        _execStats = obj;
+    }
+
     long long numDocs() const {
         return _numDocs;
     }
@@ -120,6 +124,7 @@ private:
     bool _active = true;
     long long _numDocs = 0;
     BSONObj _postBatchResumeToken;
+    boost::optional<BSONObj> _execStats;
 };
 
 /**

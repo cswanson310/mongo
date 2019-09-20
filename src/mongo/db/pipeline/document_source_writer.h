@@ -211,6 +211,9 @@ DocumentSource::GetNextResult DocumentSourceWriter<B>::doGetNext() {
         case GetNextResult::ReturnStatus::kAdvanced: {
             MONGO_UNREACHABLE;  // We consumed all advances above.
         }
+        case GetNextResult::ReturnStatus::kSlowQueryPauseExecution: {
+            MONGO_UNREACHABLE;
+        }
         case GetNextResult::ReturnStatus::kPauseExecution: {
             return nextInput;  // Propagate the pause.
         }

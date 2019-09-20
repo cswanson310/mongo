@@ -27,8 +27,6 @@
  *    it in the license file.
  */
 
-#define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kQuery
-
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/exec/plan_stage.h"
@@ -40,7 +38,7 @@
 namespace mongo {
 
 PlanStage::StageState PlanStage::work(WorkingSetID* out) {
-    invariant(_opCtx);
+    // invariant(_opCtx);
     ScopedTimer timer(getClock(), &_commonStats.executionTimeMillis);
     ++_commonStats.works;
 
@@ -54,7 +52,10 @@ PlanStage::StageState PlanStage::work(WorkingSetID* out) {
         ++_commonStats.needYield;
     } else if (StageState::FAILURE == workResult) {
         _commonStats.failed = true;
+    } else if (StageState::SLOW_QUERY_NEED_TIME == workResult) {
+        // do nothing
     }
+
 
     return workResult;
 }

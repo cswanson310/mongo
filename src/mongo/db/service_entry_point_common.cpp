@@ -742,6 +742,7 @@ void execCommandDatabase(OperationContext* opCtx,
         std::unique_ptr<MaintenanceModeSetter> mmSetter;
 
         BSONElement cmdOptionMaxTimeMSField;
+        BSONElement cmdOptionSlowQueryMSField;
         BSONElement allowImplicitCollectionCreationField;
         BSONElement helpField;
 
@@ -750,6 +751,8 @@ void execCommandDatabase(OperationContext* opCtx,
             StringData fieldName = element.fieldNameStringData();
             if (fieldName == QueryRequest::cmdOptionMaxTimeMS) {
                 cmdOptionMaxTimeMSField = element;
+            } else if (fieldName == QueryRequest::cmdOptionSlowQueryMS) {
+                cmdOptionSlowQueryMSField = element;
             } else if (fieldName == "allowImplicitCollectionCreation") {
                 allowImplicitCollectionCreationField = element;
             } else if (fieldName == CommandHelpers::kHelpFieldName) {
@@ -846,6 +849,15 @@ void execCommandDatabase(OperationContext* opCtx,
                     !opCtx->getClient()->isInDirectClient());
             opCtx->setDeadlineAfterNowBy(Milliseconds{maxTimeMS}, ErrorCodes::MaxTimeMSExpired);
         }
+        const int slowQueryMS =
+            uassertStatusOK(QueryRequest::parseSlowQueryMS(cmdOptionSlowQueryMSField));
+        if (slowQueryMS > 0) {
+            uassert(51253,
+                    "Illegal attempt to set slowQueryMS for DBDirectClient",
+                    !opCtx->getClient()->isInDirectClient());
+            opCtx->setSlowQueryDeadlineAfterNowBy(Milliseconds{slowQueryMS});
+        }
+
 
         auto& readConcernArgs = repl::ReadConcernArgs::get(opCtx);
 

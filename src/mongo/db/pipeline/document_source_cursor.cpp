@@ -208,28 +208,11 @@ void DocumentSourceCursor::recordPlanSummaryStats() {
     _planSummaryStats.hasSortStage = hasSortStage;
 }
 
-Value DocumentSourceCursor::serialize(boost::optional<ExplainOptions::Verbosity> verbosity) const {
-    // We never parse a DocumentSourceCursor, so we only serialize for explain.
-    if (!verbosity)
-        return Value();
-
+void DocumentSourceCursor::buildExplainStats(boost::optional<ExplainOptions::Verbosity> verbosity) {
+    if (!_saveExplainStats.isEmpty()) {
+        return;
+    }
     invariant(_exec);
-
-    uassert(50660,
-            "Mismatch between verbosity passed to serialize() and expression context verbosity",
-            verbosity == pExpCtx->explain);
-
-    MutableDocument out;
-    out["query"] = Value(_query);
-
-    if (!_sort.isEmpty())
-        out["sort"] = Value(_sort);
-
-    if (_limit)
-        out["limit"] = Value(_limit->getLimit());
-
-    if (!_projection.isEmpty())
-        out["fields"] = Value(_projection);
 
     BSONObjBuilder explainStatsBuilder;
 
@@ -250,7 +233,57 @@ Value DocumentSourceCursor::serialize(boost::optional<ExplainOptions::Verbosity>
                                &explainStatsBuilder);
     }
 
-    BSONObj explainStats = explainStatsBuilder.obj();
+    _saveExplainStats = explainStatsBuilder.obj().getOwned();
+}
+
+Value DocumentSourceCursor::serialize(boost::optional<ExplainOptions::Verbosity> verbosity) const {
+    // We never parse a DocumentSourceCursor, so we only serialize for explain.
+    if (!verbosity)
+        return Value();
+
+    /*
+        uassert(50660,
+                "Mismatch between verbosity passed to serialize() and expression context verbosity",
+                verbosity == pExpCtx->explain);
+    */
+
+    MutableDocument out;
+    out["query"] = Value(_query);
+
+    if (!_sort.isEmpty())
+        out["sort"] = Value(_sort);
+
+    if (_limit)
+        out["limit"] = Value(_limit->getLimit());
+
+    if (!_projection.isEmpty())
+        out["fields"] = Value(_projection);
+
+    BSONObjBuilder explainStatsBuilder;
+    BSONObj explainStats = _saveExplainStats;
+
+    if (explainStats.isEmpty()) {
+        invariant(_exec);
+
+        {
+            auto opCtx = pExpCtx->opCtx;
+            auto lockMode = getLockModeForQuery(opCtx, _exec->nss());
+            AutoGetDb dbLock(opCtx, _exec->nss().db(), lockMode);
+            Lock::CollectionLock collLock(opCtx, _exec->nss(), lockMode);
+            auto collection =
+                dbLock.getDb() ? dbLock.getDb()->getCollection(opCtx, _exec->nss()) : nullptr;
+
+            Explain::explainStages(_exec.get(),
+                                   collection,
+                                   verbosity.get(),
+                                   _execStatus,
+                                   _winningPlanTrialStats.get(),
+                                   BSONObj(),
+                                   &explainStatsBuilder);
+        }
+        explainStats = explainStatsBuilder.obj();
+    }
+
     invariant(explainStats["queryPlanner"]);
     out["queryPlanner"] = Value(explainStats["queryPlanner"]);
 
@@ -289,6 +322,15 @@ void DocumentSourceCursor::cleanupExecutor() {
 
     // Not freeing _exec if we're in explain mode since it will be used in serialize() to gather
     // execution stats.
+    /*
+    if (!(pExpCtx->explain ||pExpCtx->opCtx->hasSlowQueryDeadline() )) {
+        _exec.reset();
+    }
+    */
+    if (pExpCtx->opCtx->hasSlowQueryDeadline()) {
+        buildExplainStats(ExplainOptions::Verbosity::kExecStats);
+    }
+
     if (!pExpCtx->explain) {
         _exec.reset();
     }

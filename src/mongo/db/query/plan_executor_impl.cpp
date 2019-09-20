@@ -359,6 +359,7 @@ void PlanExecutorImpl::restoreStateWithoutRetrying() {
 
 void PlanExecutorImpl::detachFromOperationContext() {
     invariant(_currentState == kSaved);
+
     _opCtx = nullptr;
     _root->detachFromOperationContext();
     _currentState = kDetached;
@@ -530,6 +531,10 @@ PlanExecutor::ExecState PlanExecutorImpl::_getNextImpl(Snapshotted<BSONObj>* obj
 
         if (code != PlanStage::NEED_YIELD)
             writeConflictsInARow = 0;
+
+        if (PlanStage::SLOW_QUERY_NEED_TIME == code) {
+            return PlanExecutor::PAUSED;
+        }
 
         if (PlanStage::ADVANCED == code) {
             WorkingSetMember* member = _workingSet->get(id);

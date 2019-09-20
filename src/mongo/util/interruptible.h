@@ -161,10 +161,15 @@ public:
         return getDeadline() != Date_t::max();
     }
 
+    bool hasSlowQueryDeadline() const {
+        return getSlowQueryDeadline() != Date_t::max();
+    }
+
     /**
      * Returns the deadline for this interruptible, or Date_t::max() if there is no deadline.
      */
     virtual Date_t getDeadline() const = 0;
+    virtual Date_t getSlowQueryDeadline() const = 0;
 
     /**
      * Invokes the passed callback with an interruption guard active.  Additionally handles the
@@ -412,6 +417,10 @@ class Interruptible::NotInterruptible final : public Interruptible {
     }
 
     Date_t getDeadline() const override {
+        return Date_t::max();
+    }
+
+    Date_t getSlowQueryDeadline() const override {
         return Date_t::max();
     }
 

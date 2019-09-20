@@ -26,7 +26,6 @@
  *    exception statement from all source files in the program, then also delete
  *    it in the license file.
  */
-
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/pipeline/pipeline.h"
@@ -469,9 +468,13 @@ void Pipeline::stitch() {
     }
 }
 
-boost::optional<Document> Pipeline::getNext() {
+boost::optional<Document> Pipeline::getNext(bool* isSlowQuery) {
     invariant(!_sources.empty());
     auto nextResult = _sources.back()->getNext();
+    if (nextResult.isPaused() && isSlowQuery) {
+        *isSlowQuery = true;
+        return boost::none;
+    }
     while (nextResult.isPaused()) {
         nextResult = _sources.back()->getNext();
     }

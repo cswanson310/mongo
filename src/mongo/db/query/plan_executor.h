@@ -94,6 +94,7 @@ public:
         // locking helpers such as AutoGetCollection.  Code must be written to expect this
         // situation.
         FAILURE,
+        PAUSED,
     };
 
     /**

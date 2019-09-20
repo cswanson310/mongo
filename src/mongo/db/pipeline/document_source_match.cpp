@@ -62,12 +62,17 @@ const char* DocumentSourceMatch::getSourceName() const {
 }
 
 Value DocumentSourceMatch::serialize(boost::optional<ExplainOptions::Verbosity> explain) const {
+    BSONObjBuilder explainStatsBuilder;
+    buildStats(explain, &explainStatsBuilder);
+    BSONObj explainStats = explainStatsBuilder.obj();
     if (explain) {
         BSONObjBuilder builder;
         _expression->serialize(&builder);
-        return Value(DOC(getSourceName() << Document(builder.obj())));
+        return Value(DOC(getSourceName() << Document(builder.obj()) << "executionStats"
+                                         << Value(explainStats["executionStats"])));
     }
-    return Value(DOC(getSourceName() << Document(getQuery())));
+    return Value(DOC(getSourceName() << Document(getQuery()) << "executionStats"
+                                     << Value(explainStats["executionStats"])));
 }
 
 intrusive_ptr<DocumentSource> DocumentSourceMatch::optimize() {

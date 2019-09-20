@@ -26,10 +26,10 @@
  *    exception statement from all source files in the program, then also delete
  *    it in the license file.
  */
-
-#include "mongo/platform/basic.h"
+#define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kCommand
 
 #include "mongo/db/pipeline/document_source.h"
+#include "mongo/platform/basic.h"
 
 #include "mongo/db/exec/scoped_timer.h"
 #include "mongo/db/matcher/expression_algo.h"
@@ -42,7 +42,10 @@
 #include "mongo/db/pipeline/field_path.h"
 #include "mongo/db/pipeline/semantic_analysis.h"
 #include "mongo/db/pipeline/value.h"
+#include "mongo/util/log.h"
 #include "mongo/util/string_map.h"
+
+#define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kCommand
 
 namespace mongo {
 
@@ -94,10 +97,16 @@ DocumentSource::GetNextResult DocumentSource::getNext() {
     ScopedTimer timer(pExpCtx->opCtx->getServiceContext()->getFastClockSource(),
                       &_commonStats.executionTimeMillis);
     ++_commonStats.works;
+    mongo::sleepmillis(1);
+    if (pExpCtx->hasSlowQueryDeadlineExpired()) {
+        return GetNextResult::makePauseExecution();
+    }
 
     GetNextResult next = doGetNext();
     if (next.isAdvanced()) {
         ++_commonStats.advanced;
+    } else if (next.isEOF()) {
+        _commonStats.isEOF = true;
     }
     return next;
 }
