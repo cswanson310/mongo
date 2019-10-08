@@ -15,24 +15,26 @@ function testMerge(sourceColl, targetColl, shardedSource, shardedTarget) {
     jsTestLog(`Testing $merge from ${sourceColl.getFullName()} ` +
               `(${shardedSource ? "sharded" : "unsharded"}) to ${targetColl.getFullName()} ` +
               `(${shardedTarget ? "sharded" : "unsharded"})`);
-    sourceColl.drop();
-    targetColl.drop();
-    assert.commandWorked(targetColl.runCommand("create"));
+    function setup() {
+        sourceColl.drop();
+        targetColl.drop();
+        assert.commandWorked(targetColl.runCommand("create"));
 
-    if (shardedSource) {
-        st.shardColl(sourceColl, {_id: 1}, {_id: 0}, {_id: 1}, sourceColl.getDB().getName());
-    }
+        if (shardedSource) {
+            st.shardColl(sourceColl, {_id: 1}, {_id: 0}, {_id: 1}, sourceColl.getDB().getName());
+        }
 
-    if (shardedTarget) {
-        st.shardColl(targetColl, {_id: 1}, {_id: 0}, {_id: 1}, targetColl.getDB().getName());
-    }
+        if (shardedTarget) {
+            st.shardColl(targetColl, {_id: 1}, {_id: 0}, {_id: 1}, targetColl.getDB().getName());
+        }
 
-    for (let i = -5; i < 5; i++) {
-        assert.commandWorked(sourceColl.insert({_id: i}));
+        for (let i = -5; i < 5; i++) {
+            assert.commandWorked(sourceColl.insert({_id: i}));
+        }
     }
     withEachMergeMode(({whenMatchedMode, whenNotMatchedMode}) => {
         // Test without documents in target collection.
-        assert.commandWorked(targetColl.remove({}));
+        setup();  // Be careful to drop and re-create everything to avoid SERVER-38852.
         if (whenNotMatchedMode == "fail") {
             // Test whenNotMatchedMode: "fail" to an existing collection.
             assertErrorCode(sourceColl,
@@ -63,9 +65,9 @@ function testMerge(sourceColl, targetColl, shardedSource, shardedTarget) {
 
         // Test with documents in target collection. Every document in the source collection is
         // present in the target, plus some additional documents that doesn't match.
-        assert.commandWorked(targetColl.remove({}));
+        setup();  // Be careful to drop and re-create everything to avoid SERVER-38852.
         for (let i = -10; i < 5; i++) {
-            assert.commandWorked(targetColl.insert({_id: i}));
+            assert.commandWorked(targetColl.insertOne({_id: i}));
         }
 
         if (whenMatchedMode == "fail") {

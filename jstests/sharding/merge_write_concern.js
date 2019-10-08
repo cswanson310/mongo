@@ -16,13 +16,14 @@ const shard1 = st.rs1;
 assert.commandWorked(mongosDB.adminCommand({enableSharding: mongosDB.getName()}));
 st.ensurePrimaryShard(mongosDB.getName(), st.shard0.shardName);
 
-function testWriteConcernError(rs) {
+function testWriteConcernError({rs, resetTargetFn}) {
     // Make sure that there are only 2 nodes up so w:3 writes will always time out.
     const stoppedSecondary = rs.getSecondary();
     rs.stop(stoppedSecondary);
 
     // Test that $merge correctly returns a WC error.
     withEachMergeMode(({whenMatchedMode, whenNotMatchedMode}) => {
+        resetTargetFn();  // Be careful to avoid using remove({}) to work around SERVER-38852.
         const res = mongosDB.runCommand({
             aggregate: "source",
             pipeline: [{
@@ -43,7 +44,6 @@ function testWriteConcernError(rs) {
                                      whenNotMatchedMode == "fail"
                                          ? [13113, ErrorCodes.WriteConcernFailed]
                                          : ErrorCodes.WriteConcernFailed);
-        assert.commandWorked(target.remove({}));
     });
 
     // Restart the stopped node and verify that the $merge's now pass.
@@ -55,6 +55,7 @@ function testWriteConcernError(rs) {
         if (whenNotMatchedMode == "fail")
             return;
 
+        resetTargetFn();  // Be careful to avoid using remove({}) to work around SERVER-38852.
         const res = mongosDB.runCommand({
             aggregate: "source",
             pipeline: [{
@@ -72,30 +73,33 @@ function testWriteConcernError(rs) {
         // prevents the test from hanging if for some reason the write concern can't be
         // satisfied.
         assert.soon(() => assert.commandWorked(res), "writeConcern was not satisfied");
-        assert.commandWorked(target.remove({}));
     });
 }
 
 // Test that when both collections are unsharded, all writes are directed to the primary shard.
 assert.commandWorked(source.insert([{_id: -1}, {_id: 0}, {_id: 1}, {_id: 2}]));
-testWriteConcernError(shard0);
+testWriteConcernError({rs: shard0, resetTargetFn: () => target.drop()});
 
 // Shard the source collection and continue to expect writes to the primary shard.
 st.shardColl(source, {_id: 1}, {_id: 0}, {_id: 1}, mongosDB.getName());
-testWriteConcernError(shard0);
+testWriteConcernError({rs: shard0, resetTargetFn: () => target.drop()});
 
-// Shard the target collection, however make sure that all writes go to the primary shard by
-// splitting the collection at {_id: 10} and keeping all values in the same chunk.
-st.shardColl(target, {_id: 1}, {_id: 10}, {_id: 10}, mongosDB.getName());
-assert.eq(FixtureHelpers.isSharded(target), true);
-testWriteConcernError(shard0);
+// Test with the target collection sharded, however make sure that all writes go to the primary
+// shard by splitting the collection at {_id: 10} and keeping all values in the same chunk.
+function resetTargetToBeSharded() {
+    target.drop();
+    st.shardColl(target, {_id: 1}, {_id: 10}, {_id: 10}, mongosDB.getName());
+    assert.eq(FixtureHelpers.isSharded(target), true);
+}
+testWriteConcernError({rs: shard0, resetTargetFn: resetTargetToBeSharded});
 
-// Write a few documents to the source collection which will be $merge-ed to the second shard.
+// Write a few documents to the source collection which will be $merge-ed to the second
+// shard.
 assert.commandWorked(source.insert([{_id: 11}, {_id: 12}, {_id: 13}]));
 
 // Verify that either shard can produce a WriteConcernError since writes are going to both.
-testWriteConcernError(shard0);
-testWriteConcernError(shard1);
+testWriteConcernError({rs: shard0, resetTargetFn: resetTargetToBeSharded});
+testWriteConcernError({rs: shard0, resetTargetFn: resetTargetToBeSharded});
 
 st.stop();
 }());

@@ -149,7 +149,8 @@ MongoRunner.stopMongod(conn);
 // command sent to mongod. Since the actual timeout can unreliably happen in mongos before even
 // reaching the shard, we instead set a very large timeout and verify that the command sent to
 // mongod includes the maxTimeMS.
-function runShardedTest(whenMatched, whenNotMatched, mongosConn, mongodConn, comment) {
+function runShardedTest(
+    {whenMatched, whenNotMatched, mongosConn, mongodConn, resetTargetFn, comment}) {
     jsTestLog("Running sharded test in whenMatched: " + whenMatched +
               " whenNotMatched: " + whenNotMatched);
     // The target collection will always be empty so we do not test the setting that will cause
@@ -163,7 +164,7 @@ function runShardedTest(whenMatched, whenNotMatched, mongosConn, mongodConn, com
 
     const sourceColl = mongosConn.getDB(kDBName)[kSourceCollName];
     const destColl = mongosConn.getDB(kDBName)[kDestCollName];
-    assert.commandWorked(destColl.remove({}));
+    resetTargetFn();  // Be careful to avoid using remove({}) to work around SERVER-38852.
 
     // Make sure we don't timeout in mongos before even reaching the shards.
     assert.commandWorked(mongosConn.getDB("admin").runCommand(
@@ -221,32 +222,52 @@ assert.commandWorked(st.shard0.getDB(kDBName).setProfilingLevel(2));
 assert.commandWorked(st.shard1.getDB(kDBName).setProfilingLevel(2));
 
 // // Run the test with 'destColl' unsharded.
-withEachMergeMode(
-    (mode) => runShardedTest(
-        mode.whenMatchedMode, mode.whenNotMatchedMode, st.s, st.shard0, mode + "_unshardedDest"));
+const destColl = st.s.getDB(kDBName)[kDestCollName];
+withEachMergeMode((mode) => runShardedTest({
+                      whenMatched: mode.whenMatchedMode,
+                      whenNotMatched: mode.whenNotMatchedMode,
+                      mongosConn: st.s,
+                      mongodConn: st.shard0,
+                      resetTargetFn: () => destColl.drop(),
+                      comment: mode + "_unshardedDest"
+                  }));
 
 // Run the test with 'destColl' sharded. This means that writes will be sent to both
 // shards, and if either one hangs, the MaxTimeMS will expire.
 // Shard the destination collection.
-st.shardColl(kDestCollName,
-             {_id: 1},  // key
-             {_id: 5},  // split
-             {_id: 6},  // move
-             kDBName);
+function shardDest() {
+    st.shardColl(kDestCollName,
+                 {_id: 1},  // key
+                 {_id: 5},  // split
+                 {_id: 6},  // move
+                 kDBName);
+}
 
 jsTestLog("Running test forcing shard " + st.shard0.name + " to hang");
-withEachMergeMode((mode) => runShardedTest(mode.whenMatchedMode,
-                                           mode.whenNotMatchedMode,
-                                           st.s,
-                                           st.shard0,
-                                           mode + "_shardedDest_" + st.shard0.name));
+withEachMergeMode((mode) => runShardedTest({
+                      whenMatched: mode.whenMatchedMode,
+                      whenNotMatched: mode.whenNotMatchedMode,
+                      mongosConn: st.s,
+                      mongodConn: st.shard0,
+                      resetTargetFn: () => {
+                          destColl.drop();
+                          shardDest();
+                      },
+                      comment: mode + "_shardedDest_" + st.shard0.name
+                  }));
 
 jsTestLog("Running test forcing shard " + st.shard1.name + " to hang");
-withEachMergeMode((mode) => runShardedTest(mode.whenMatchedMode,
-                                           mode.whenNotMatchedMode,
-                                           st.s,
-                                           st.shard1,
-                                           mode + "_shardedDest_" + st.shard1.name));
+withEachMergeMode((mode) => runShardedTest({
+                      whenMatched: mode.whenMatchedMode,
+                      whenNotMatched: mode.whenNotMatchedMode,
+                      mongosConn: st.s,
+                      mongodConn: st.shard0,
+                      resetTargetFn: () => {
+                          destColl.drop();
+                          shardDest();
+                      },
+                      comment: mode + "_shardedDest_" + st.shard1.name
+                  }));
 
 st.stop();
 })();
