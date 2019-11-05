@@ -121,6 +121,7 @@ Status MongoInterfaceShardServer::insert(const boost::intrusive_ptr<ExpressionCo
 
     BatchedCommandRequest insertCommand(
         buildInsertOp(ns, std::move(objs), expCtx->bypassDocumentValidation));
+    insertCommand.setAllowImplicitCreate(false);
 
     // If applicable, attach a write concern to the batched command request.
     attachWriteConcern(&insertCommand, wc);
@@ -143,6 +144,7 @@ StatusWith<MongoProcessInterface::UpdateResult> MongoInterfaceShardServer::updat
     BatchWriteExecStats stats;
 
     BatchedCommandRequest updateCommand(buildUpdateOp(expCtx, ns, std::move(batch), upsert, multi));
+    updateCommand.setAllowImplicitCreate(false);
 
     // If applicable, attach a write concern to the batched command request.
     attachWriteConcern(&updateCommand, wc);
