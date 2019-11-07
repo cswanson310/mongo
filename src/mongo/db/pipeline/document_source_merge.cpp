@@ -427,6 +427,7 @@ void DocumentSourceMerge::initialize() {
         return;  // If we know the version we're targeting we must have already detected that the
                  // collection exists.
     }
+    /*
     DocumentSourceWriteBlock writeBlock(pExpCtx->opCtx);
 
     try {
@@ -434,6 +435,7 @@ void DocumentSourceMerge::initialize() {
     } catch (const ExceptionFor<ErrorCodes::NamespaceExists>&) {
         LOG(2) << "Attempted to create a collection that already exists. Ignoring.";
     }
+    */
 }
 
 Value DocumentSourceMerge::serialize(boost::optional<ExplainOptions::Verbosity> explain) const {

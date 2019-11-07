@@ -310,7 +310,7 @@ void BatchWriteExec::executeBatch(OperationContext* opCtx,
                     trackedErrors.startTracking(ErrorCodes::StaleDbVersion);
                     trackedErrors.startTracking(ErrorCodes::CannotImplicitlyCreateCollection);
 
-                    LOG(4) << "Write results received from " << shardHost.toString() << ": "
+                    LOG(0) << "CHARLIE Write results received from " << shardHost.toString() << ": "
                            << redact(batchedCommandResponse.toStatus());
 
                     // Dispatch was ok, note response
@@ -424,7 +424,7 @@ void BatchWriteExec::executeBatch(OperationContext* opCtx,
         bool targeterChanged = false;
         Status refreshStatus = targeter.refreshIfNeeded(opCtx, &targeterChanged);
 
-        LOG(4) << "executeBatch targeter changed: " << targeterChanged;
+        LOG(0) << "CHARLIE executeBatch targeter changed: " << targeterChanged;
 
         if (!refreshStatus.isOK()) {
             // It's okay if we can't refresh, we'll just record errors for the ops if

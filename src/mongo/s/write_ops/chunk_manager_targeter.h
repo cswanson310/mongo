@@ -165,6 +165,8 @@ private:
 
     // remote db version reported from stale errors
     boost::optional<DatabaseVersion> _remoteDbVersion;
+
+    std::uint32_t _retargetAttempts = 0;
 };
 
 }  // namespace mongo

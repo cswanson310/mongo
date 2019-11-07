@@ -685,6 +685,9 @@ StatusWith<std::vector<ShardEndpoint>> ChunkManagerTargeter::targetAllShards(
 void ChunkManagerTargeter::noteCouldNotTarget() {
     dassert(_remoteShardVersions.empty());
     dassert(!_remoteDbVersion);
+    uassert(50524,
+            "Too many retry attempts before finding an appropriate target",
+            _retargetAttempts++ < 10);
     _needsTargetingRefresh = true;
 }
 

@@ -441,7 +441,7 @@ void runCommand(OperationContext* opCtx,
 
         for (int tries = 0;; ++tries) {
             // Try kMaxNumStaleVersionRetries times. On the last try, exceptions are rethrown.
-            bool canRetry = tries < kMaxNumStaleVersionRetries - 1;
+            bool canRetry = tries < 3 - 1;
 
             if (tries > 0) {
                 // Re-parse before retrying in case the process of run()-ning the
@@ -467,6 +467,7 @@ void runCommand(OperationContext* opCtx,
                         return staleInfo->getNss();
                     } else if (auto implicitCreateInfo =
                                    ex.extraInfo<CannotImplicitlyCreateCollectionInfo>()) {
+                        log() << "CHARLIE retrying command";
                         // Requests that attempt to implicitly create a collection in a transaction
                         // should always fail with OperationNotSupportedInTransaction - this
                         // assertion is only meant to safeguard that assumption.
