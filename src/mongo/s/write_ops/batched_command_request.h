@@ -36,6 +36,7 @@
 #include "mongo/rpc/op_msg.h"
 #include "mongo/s/chunk_version.h"
 #include "mongo/s/database_version_helpers.h"
+#include "mongo/s/write_ops/implicit_collection_creation_policy_gen.h"
 
 namespace mongo {
 
@@ -151,12 +152,12 @@ public:
     BSONObj toBSON() const;
     std::string toString() const;
 
-    void setAllowImplicitCreate(bool doAllow) {
-        _allowImplicitCollectionCreation = doAllow;
+    void setImplicitCollectionCreationPolicy(ImplicitCollectionCreationPolicyEnum policy) {
+        _implicitCollectionCreationPolicy = policy;
     }
 
-    bool isImplicitCreateAllowed() const {
-        return _allowImplicitCollectionCreation;
+    ImplicitCollectionCreationPolicyEnum getImplicitCreatePolicy() const {
+        return _implicitCollectionCreationPolicy;
     }
 
     /**
@@ -196,7 +197,8 @@ private:
     boost::optional<DatabaseVersion> _dbVersion;
 
     boost::optional<BSONObj> _writeConcern;
-    bool _allowImplicitCollectionCreation = false;
+    ImplicitCollectionCreationPolicyEnum _implicitCollectionCreationPolicy =
+        ImplicitCollectionCreationPolicyEnum::kMoveToConfigServer;
 };
 
 /**

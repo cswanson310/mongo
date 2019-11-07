@@ -71,7 +71,10 @@ TEST_F(ImplicitCreateTest, NormalCreate) {
     auto future = launchAsync([this, &kNs] {
         ThreadClient tc("Test", getGlobalServiceContext());
         auto opCtx = cc().makeOperationContext();
-        ASSERT_OK(onCannotImplicitlyCreateCollection(opCtx.get(), kNs));
+        ASSERT_OK(onCannotImplicitlyCreateCollection(
+            opCtx.get(),
+            CannotImplicitlyCreateCollectionInfo(
+                kNs, ImplicitCollectionCreationPolicyEnum::kMoveToConfigServer)));
     });
 
     expectConfigCreate(kNs, Status::OK());
@@ -84,7 +87,10 @@ TEST_F(ImplicitCreateTest, CanCallOnCannotImplicitAgainAfterError) {
     auto future = launchAsync([this, &kNs] {
         ThreadClient tc("Test", getGlobalServiceContext());
         auto opCtx = cc().makeOperationContext();
-        auto status = onCannotImplicitlyCreateCollection(opCtx.get(), kNs);
+        auto status = onCannotImplicitlyCreateCollection(
+            opCtx.get(),
+            CannotImplicitlyCreateCollectionInfo(
+                kNs, ImplicitCollectionCreationPolicyEnum::kMoveToConfigServer));
         ASSERT_EQ(ErrorCodes::FailPointEnabled, status);
     });
 
@@ -99,7 +105,10 @@ TEST_F(ImplicitCreateTest, CanCallOnCannotImplicitAgainAfterError) {
     future = launchAsync([this, &kNs] {
         ThreadClient tc("Test", getGlobalServiceContext());
         auto opCtx = cc().makeOperationContext();
-        ASSERT_OK(onCannotImplicitlyCreateCollection(opCtx.get(), kNs));
+        ASSERT_OK(onCannotImplicitlyCreateCollection(
+            opCtx.get(),
+            CannotImplicitlyCreateCollectionInfo(
+                kNs, ImplicitCollectionCreationPolicyEnum::kMoveToConfigServer)));
     });
 
     expectConfigCreate(kNs, Status::OK());
@@ -112,7 +121,10 @@ TEST_F(ImplicitCreateTest, ShouldNotCallConfigCreateIfCollectionExists) {
     auto future = launchAsync([this, &kNs] {
         ThreadClient tc("Test", getGlobalServiceContext());
         auto opCtx = cc().makeOperationContext();
-        auto status = onCannotImplicitlyCreateCollection(opCtx.get(), kNs);
+        auto status = onCannotImplicitlyCreateCollection(
+            opCtx.get(),
+            CannotImplicitlyCreateCollectionInfo(
+                kNs, ImplicitCollectionCreationPolicyEnum::kMoveToConfigServer));
         ASSERT_EQ(ErrorCodes::FailPointEnabled, status);
     });
 

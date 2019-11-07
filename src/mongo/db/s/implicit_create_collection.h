@@ -41,7 +41,7 @@ class OperationContext;
  * by sending the command to the config server to create an entry for this collection in
  * the sharding catalog.
  */
-Status onCannotImplicitlyCreateCollection(OperationContext* opCtx,
-                                          const NamespaceString& ns) noexcept;
+Status onCannotImplicitlyCreateCollection(
+    OperationContext* opCtx, const CannotImplicitlyCreateCollectionInfo& exceptionInfo) noexcept;
 
 }  // namespace mongo

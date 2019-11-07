@@ -90,7 +90,7 @@ ScopedOperationCompletionShardingActions::~ScopedOperationCompletionShardingActi
                    status->extraInfo<CannotImplicitlyCreateCollectionInfo>()) {
         if (ShardingState::get(_opCtx)->enabled()) {
             auto handleCannotImplicitCreateStatus =
-                onCannotImplicitlyCreateCollection(_opCtx, cannotImplicitCreateCollInfo->getNss());
+                onCannotImplicitlyCreateCollection(_opCtx, *cannotImplicitCreateCollInfo);
             if (!handleCannotImplicitCreateStatus.isOK())
                 log() << "Failed to handle CannotImplicitlyCreateCollection exception"
                       << causedBy(redact(handleCannotImplicitCreateStatus));

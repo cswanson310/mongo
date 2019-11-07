@@ -193,8 +193,7 @@ public:
         } else if (auto cannotImplicitCreateCollInfo =
                        e.extraInfo<CannotImplicitlyCreateCollectionInfo>()) {
             if (ShardingState::get(opCtx)->enabled()) {
-                onCannotImplicitlyCreateCollection(opCtx, cannotImplicitCreateCollInfo->getNss())
-                    .ignore();
+                onCannotImplicitlyCreateCollection(opCtx, *cannotImplicitCreateCollInfo).ignore();
             }
         }
     }

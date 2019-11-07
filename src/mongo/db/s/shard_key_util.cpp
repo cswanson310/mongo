@@ -35,6 +35,7 @@
 #include "mongo/db/query/collation/collator_factory_interface.h"
 #include "mongo/db/s/shard_key_util.h"
 #include "mongo/s/cluster_commands_helpers.h"
+#include "mongo/s/write_ops/implicit_collection_creation_policy_gen.h"
 
 namespace mongo {
 namespace shardkeyutil {
@@ -84,7 +85,8 @@ BSONObj makeCreateIndexesCmd(const NamespaceString& nss,
     createIndexes.append("createIndexes", nss.coll());
     createIndexes.append("indexes", BSON_ARRAY(index.obj()));
     createIndexes.append("writeConcern", WriteConcernOptions::Majority);
-    return appendAllowImplicitCreate(createIndexes.obj(), false);
+    return appendAllowImplicitCreate(createIndexes.obj(),
+                                     ImplicitCollectionCreationPolicyEnum::kMoveToConfigServer);
 }
 
 void validateShardKeyAgainstExistingIndexes(OperationContext* opCtx,

@@ -70,6 +70,7 @@ env.Library(
         '$BUILD_DIR/mongo/db/curop',
         '$BUILD_DIR/mongo/db/logical_session_id_helpers',
         '$BUILD_DIR/mongo/db/repl/read_concern_args',
+        '$BUILD_DIR/mongo/s/write_ops/implicit_collection_creation_policy',
         'async_requests_sender',
         'common_s',
         'grid',
@@ -196,6 +197,7 @@ env.Library(
         '$BUILD_DIR/mongo/db/query/query_request',
         '$BUILD_DIR/mongo/db/repl/optime',
         '$BUILD_DIR/mongo/idl/idl_parser',
+        '$BUILD_DIR/mongo/s/write_ops/implicit_collection_creation_policy',
     ]
 )
 

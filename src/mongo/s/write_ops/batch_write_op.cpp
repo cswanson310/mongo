@@ -544,7 +544,7 @@ BatchedCommandRequest BatchWriteOp::buildBatchRequest(
         }
     }
 
-    request.setAllowImplicitCreate(_clientRequest.isImplicitCreateAllowed());
+    request.setImplicitCollectionCreationPolicy(_clientRequest.getImplicitCreatePolicy());
 
     return request;
 }

@@ -5,6 +5,17 @@ Import("env")
 env = env.Clone()
 
 env.Library(
+    target='implicit_collection_creation_policy',
+    source=[
+        env.Idlc('implicit_collection_creation_policy.idl')[0],
+    ],
+    LIBDEPS=[
+        '$BUILD_DIR/mongo/base',
+        '$BUILD_DIR/mongo/idl/idl_parser',
+    ],
+)
+
+env.Library(
     target='batch_write_types',
     source=[
         'batched_command_request.cpp',
@@ -13,6 +24,7 @@ env.Library(
         'write_error_detail.cpp',
     ],
     LIBDEPS=[
+        'implicit_collection_creation_policy',
         '$BUILD_DIR/mongo/base',
         '$BUILD_DIR/mongo/db/common',
         '$BUILD_DIR/mongo/db/logical_clock',

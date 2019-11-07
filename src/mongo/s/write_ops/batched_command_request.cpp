@@ -59,7 +59,15 @@ BatchedCommandRequest constructBatchedCommandRequest(const OpMsgRequest& request
     }
 
     if (auto allowImplicitElement = request.body[kAllowImplicitCollectionCreation]) {
-        batchRequest.setAllowImplicitCreate(allowImplicitElement.boolean());
+        IDLParserErrorContext parseContext(kAllowImplicitCollectionCreation);
+        uassert(51250,
+                str::stream() << "Expected " << kAllowImplicitCollectionCreation
+                              << " to be a string, but found "
+                              << typeName(allowImplicitElement.type()),
+                allowImplicitElement.type() == BSONType::String);
+
+        batchRequest.setImplicitCollectionCreationPolicy(
+            ImplicitCollectionCreationPolicy_parse(parseContext, allowImplicitElement.String()));
     }
 
     return batchRequest;
@@ -134,7 +142,8 @@ void BatchedCommandRequest::serialize(BSONObjBuilder* builder) const {
         builder->append(kWriteConcern, *_writeConcern);
     }
 
-    builder->append(kAllowImplicitCollectionCreation, _allowImplicitCollectionCreation);
+    builder->append(kAllowImplicitCollectionCreation,
+                    ImplicitCollectionCreationPolicy_serializer(_implicitCollectionCreationPolicy));
 }
 
 BSONObj BatchedCommandRequest::toBSON() const {

@@ -55,6 +55,7 @@
 #include "mongo/s/shard_id.h"
 #include "mongo/s/stale_exception.h"
 #include "mongo/s/transaction_router.h"
+#include "mongo/s/write_ops/implicit_collection_creation_policy_gen.h"
 #include "mongo/util/log.h"
 #include "mongo/util/scopeguard.h"
 
@@ -112,7 +113,8 @@ std::vector<AsyncRequestsSender::Request> buildUnversionedRequestsForShards(
     OperationContext* opCtx, std::vector<ShardId> shardIds, const BSONObj& cmdObj) {
     auto cmdToSend = cmdObj;
     if (!cmdToSend.hasField(kAllowImplicitCollectionCreation)) {
-        cmdToSend = appendAllowImplicitCreate(cmdToSend, false);
+        cmdToSend = appendAllowImplicitCreate(
+            cmdToSend, ImplicitCollectionCreationPolicyEnum::kMoveToConfigServer);
     }
 
     std::vector<AsyncRequestsSender::Request> requests;
@@ -139,7 +141,8 @@ std::vector<AsyncRequestsSender::Request> buildVersionedRequestsForTargetedShard
 
     auto cmdToSend = cmdObj;
     if (!cmdToSend.hasField(kAllowImplicitCollectionCreation)) {
-        cmdToSend = appendAllowImplicitCreate(cmdToSend, false);
+        cmdToSend = appendAllowImplicitCreate(
+            cmdToSend, ImplicitCollectionCreationPolicyEnum::kMoveToConfigServer);
     }
 
     if (!routingInfo.cm()) {
@@ -262,9 +265,10 @@ BSONObj appendShardVersion(BSONObj cmdObj, ChunkVersion version) {
     return cmdWithVersionBob.obj();
 }
 
-BSONObj appendAllowImplicitCreate(BSONObj cmdObj, bool allow) {
+BSONObj appendAllowImplicitCreate(BSONObj cmdObj, ImplicitCollectionCreationPolicyEnum policy) {
     BSONObjBuilder newCmdBuilder(std::move(cmdObj));
-    newCmdBuilder.append(kAllowImplicitCollectionCreation, allow);
+    newCmdBuilder.append(kAllowImplicitCollectionCreation,
+                         ImplicitCollectionCreationPolicy_serializer(policy));
     return newCmdBuilder.obj();
 }
 

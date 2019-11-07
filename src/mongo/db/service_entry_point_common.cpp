@@ -831,7 +831,7 @@ void execCommandDatabase(OperationContext* opCtx,
             behaviors.advanceConfigOpTimeFromRequestMetadata(opCtx);
         }
 
-        oss.setAllowImplicitCollectionCreation(allowImplicitCollectionCreationField);
+        oss.setImplicitCollectionCreationPolicy(allowImplicitCollectionCreationField);
         auto scoped = behaviors.scopedOperationCompletionShardingActions(opCtx);
 
         // This may trigger the maxTimeAlwaysTimeOut failpoint.

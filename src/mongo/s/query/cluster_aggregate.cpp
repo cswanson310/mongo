@@ -75,6 +75,7 @@
 #include "mongo/s/query/store_possible_cursor.h"
 #include "mongo/s/stale_exception.h"
 #include "mongo/s/transaction_router.h"
+#include "mongo/s/write_ops/implicit_collection_creation_policy_gen.h"
 #include "mongo/util/fail_point.h"
 #include "mongo/util/log.h"
 #include "mongo/util/net/socket_utils.h"
@@ -134,7 +135,8 @@ BSONObj createCommandForMergingShard(const AggregationRequest& request,
         mergeCmd.remove("readConcern");
     }
 
-    return appendAllowImplicitCreate(mergeCmd.freeze().toBson(), false);
+    return appendAllowImplicitCreate(mergeCmd.freeze().toBson(),
+                                     ImplicitCollectionCreationPolicyEnum::kMoveToConfigServer);
 }
 
 sharded_agg_helpers::DispatchShardPipelineResults dispatchExchangeConsumerPipeline(

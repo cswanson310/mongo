@@ -34,6 +34,7 @@
 #include "mongo/db/namespace_string.h"
 #include "mongo/s/chunk_version.h"
 #include "mongo/s/database_version_gen.h"
+#include "mongo/s/write_ops/implicit_collection_creation_policy_gen.h"
 #include "mongo/util/concurrency/notification.h"
 #include "mongo/util/string_map.h"
 
@@ -75,12 +76,13 @@ public:
      * since the collection options will not be propagated. Such requests specify to disallow
      * collection creation, which is saved here.
      */
-    void setAllowImplicitCollectionCreation(const BSONElement& allowImplicitCollectionCreationElem);
+    void setImplicitCollectionCreationPolicy(
+        const BSONElement& allowImplicitCollectionCreationElem);
 
     /**
      * Specifies whether the request is allowed to create database/collection implicitly.
      */
-    bool allowImplicitCollectionCreation() const;
+    ImplicitCollectionCreationPolicyEnum getImplicitCollectionCreationPolicy() const;
 
     /**
      * Parses shardVersion and databaseVersion from 'cmdObj' and stores the results in this object
@@ -180,7 +182,8 @@ public:
 
 private:
     // Specifies whether the request is allowed to create database/collection implicitly
-    bool _allowImplicitCollectionCreation{true};
+    ImplicitCollectionCreationPolicyEnum _implicitCollectionCreationPolicy{
+        ImplicitCollectionCreationPolicyEnum::kAllow};
 
     // Should be set to true if all collections accessed are expected to be unsharded.
     bool _globalUnshardedShardVersion = false;

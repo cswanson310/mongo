@@ -45,6 +45,7 @@
 #include "mongo/s/cluster_commands_helpers.h"
 #include "mongo/s/grid.h"
 #include "mongo/s/request_types/shard_collection_gen.h"
+#include "mongo/s/write_ops/implicit_collection_creation_policy_gen.h"
 #include "mongo/util/log.h"
 
 namespace mongo {
@@ -198,7 +199,8 @@ BSONObj fixForShards(const BSONObj& orig,
         b.append("splitInfo", maxChunkSizeBytes);
     }
 
-    return appendAllowImplicitCreate(b.obj(), false);
+    return appendAllowImplicitCreate(b.obj(),
+                                     ImplicitCollectionCreationPolicyEnum::kMoveToConfigServer);
 }
 
 bool runMapReduce(OperationContext* opCtx,
@@ -316,11 +318,11 @@ bool runMapReduce(OperationContext* opCtx,
         ShardConnection conn(opCtx, inputRoutingInfo.db().primary()->getConnString(), "");
 
         BSONObj res;
-        bool ok =
-            conn->runCommand(dbname,
-                             appendAllowImplicitCreate(
-                                 CommandHelpers::filterCommandRequestForPassthrough(cmdObj), false),
-                             res);
+        bool ok = conn->runCommand(
+            dbname,
+            appendAllowImplicitCreate(CommandHelpers::filterCommandRequestForPassthrough(cmdObj),
+                                      ImplicitCollectionCreationPolicyEnum::kMoveToConfigServer),
+            res);
         conn.done();
 
         if (auto wcErrorElem = res["writeConcernError"]) {
@@ -476,8 +478,11 @@ bool runMapReduce(OperationContext* opCtx,
             uassertStatusOK(shardRegistry->getShard(opCtx, outputDbInfo.primaryId()));
 
         ShardConnection conn(opCtx, outputShard->getConnString(), outputCollNss.ns());
-        ok =
-            conn->runCommand(outDB, appendAllowImplicitCreate(finalCmd.obj(), false), singleResult);
+        ok = conn->runCommand(
+            outDB,
+            appendAllowImplicitCreate(finalCmd.obj(),
+                                      ImplicitCollectionCreationPolicyEnum::kMoveToConfigServer),
+            singleResult);
 
         BSONObj counts = singleResult.getObjectField("counts");
         postCountsB.append(conn->getServerAddress(), counts);
@@ -575,7 +580,8 @@ bool runMapReduce(OperationContext* opCtx,
                 opCtx, outputCollNss.ns(), "mr-post-process", kNoDistLockTimeout);
             uassertStatusOK(scopedDistLock.getStatus());
 
-            BSONObj finalCmdObj = appendAllowImplicitCreate(finalCmd.obj(), false);
+            BSONObj finalCmdObj = appendAllowImplicitCreate(
+                finalCmd.obj(), ImplicitCollectionCreationPolicyEnum::kMoveToConfigServer);
             mrCommandResults.clear();
 
             try {

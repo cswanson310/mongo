@@ -69,17 +69,28 @@ bool OperationShardingState::isOperationVersioned(OperationContext* opCtx) {
     return ShardedConnectionInfo::get(client, false) || get(opCtx).hasShardVersion();
 }
 
-void OperationShardingState::setAllowImplicitCollectionCreation(
+void OperationShardingState::setImplicitCollectionCreationPolicy(
     const BSONElement& allowImplicitCollectionCreationElem) {
     if (!allowImplicitCollectionCreationElem.eoo()) {
-        _allowImplicitCollectionCreation = allowImplicitCollectionCreationElem.Bool();
+        IDLParserErrorContext parseContext(
+            allowImplicitCollectionCreationElem.fieldNameStringData());
+        uassert(51251,
+                str::stream() << "Expected "
+                              << allowImplicitCollectionCreationElem.fieldNameStringData()
+                              << " to be a string, but found "
+                              << typeName(allowImplicitCollectionCreationElem.type()),
+                allowImplicitCollectionCreationElem.type() == BSONType::String);
+
+        _implicitCollectionCreationPolicy = ImplicitCollectionCreationPolicy_parse(
+            parseContext, allowImplicitCollectionCreationElem.String());
     } else {
-        _allowImplicitCollectionCreation = true;
+        _implicitCollectionCreationPolicy = ImplicitCollectionCreationPolicyEnum::kAllow;
     }
 }
 
-bool OperationShardingState::allowImplicitCollectionCreation() const {
-    return _allowImplicitCollectionCreation;
+ImplicitCollectionCreationPolicyEnum OperationShardingState::getImplicitCollectionCreationPolicy()
+    const {
+    return _implicitCollectionCreationPolicy;
 }
 
 void OperationShardingState::initializeClientRoutingVersions(NamespaceString nss,

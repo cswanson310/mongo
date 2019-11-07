@@ -31,6 +31,7 @@
 
 #include "mongo/base/error_codes.h"
 #include "mongo/db/namespace_string.h"
+#include "mongo/s/write_ops/implicit_collection_creation_policy_gen.h"
 
 namespace mongo {
 
@@ -38,10 +39,16 @@ class CannotImplicitlyCreateCollectionInfo final : public ErrorExtraInfo {
 public:
     static constexpr auto code = ErrorCodes::CannotImplicitlyCreateCollection;
 
-    CannotImplicitlyCreateCollectionInfo(NamespaceString nss) : _nss(std::move(nss)) {}
+    CannotImplicitlyCreateCollectionInfo(NamespaceString nss,
+                                         ImplicitCollectionCreationPolicyEnum policy)
+        : _nss(std::move(nss)), _policy(policy) {}
 
     const auto& getNss() const {
         return _nss;
+    }
+
+    const auto& getPolicy() const {
+        return _policy;
     }
 
     void serialize(BSONObjBuilder* bob) const final;
@@ -49,6 +56,7 @@ public:
 
 private:
     NamespaceString _nss;
+    ImplicitCollectionCreationPolicyEnum _policy;
 };
 
 using ImplicitCreateCollectionException =

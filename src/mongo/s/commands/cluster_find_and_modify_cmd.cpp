@@ -52,6 +52,7 @@
 #include "mongo/s/transaction_router.h"
 #include "mongo/s/would_change_owning_shard_exception.h"
 #include "mongo/s/write_ops/cluster_write.h"
+#include "mongo/s/write_ops/implicit_collection_creation_policy_gen.h"
 #include "mongo/util/timer.h"
 
 namespace mongo {
@@ -276,7 +277,8 @@ private:
         const auto response = [&] {
             std::vector<AsyncRequestsSender::Request> requests;
             BSONObj filteredCmdObj = appendAllowImplicitCreate(
-                CommandHelpers::filterCommandRequestForPassthrough(cmdObj), false);
+                CommandHelpers::filterCommandRequestForPassthrough(cmdObj),
+                ImplicitCollectionCreationPolicyEnum::kMoveToConfigServer);
             BSONObj cmdObjWithVersions(std::move(filteredCmdObj));
             if (dbVersion) {
                 cmdObjWithVersions = appendDbVersionIfPresent(cmdObjWithVersions, *dbVersion);

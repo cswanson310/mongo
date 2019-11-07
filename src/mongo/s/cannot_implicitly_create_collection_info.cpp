@@ -33,6 +33,7 @@
 
 #include "mongo/base/init.h"
 #include "mongo/bson/bsonobjbuilder.h"
+#include "mongo/s/write_ops/implicit_collection_creation_policy_gen.h"
 #include "mongo/util/assert_util.h"
 
 namespace mongo {
@@ -44,11 +45,17 @@ MONGO_INIT_REGISTER_ERROR_EXTRA_INFO(CannotImplicitlyCreateCollectionInfo);
 
 void CannotImplicitlyCreateCollectionInfo::serialize(BSONObjBuilder* bob) const {
     bob->append("ns", _nss.ns());
+    bob->append("allowImplicitCollectionCreate",
+                ImplicitCollectionCreationPolicy_serializer(_policy));
 }
 
 std::shared_ptr<const ErrorExtraInfo> CannotImplicitlyCreateCollectionInfo::parse(
     const BSONObj& obj) {
-    return std::make_shared<CannotImplicitlyCreateCollectionInfo>(NamespaceString(obj["ns"].str()));
+    IDLParserErrorContext parseContext("allowImplicitCollectionCreate");
+    return std::make_shared<CannotImplicitlyCreateCollectionInfo>(
+        NamespaceString(obj["ns"].str()),
+        ImplicitCollectionCreationPolicy_parse(parseContext,
+                                               obj["allowImplicitCollectionCreate"_sd].String()));
 }
 
 }  // namespace mongo

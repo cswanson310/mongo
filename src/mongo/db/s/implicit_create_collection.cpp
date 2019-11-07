@@ -43,6 +43,7 @@
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/service_context.h"
+#include "mongo/s/cannot_implicitly_create_collection_info.h"
 #include "mongo/s/grid.h"
 #include "mongo/s/request_types/create_collection_gen.h"
 
@@ -69,7 +70,7 @@ public:
      * by sending the command to the config server to create an entry for this collection in
      * the sharding catalog.
      */
-    Status onCannotImplicitlyCreateCollection(OperationContext* opCtx) noexcept {
+    Status createCollectionViaConfigServer(OperationContext* opCtx) noexcept {
         invariant(!opCtx->lockState()->isLocked());
 
         {
@@ -161,13 +162,20 @@ const auto createCollectionSerializerMap =
 
 }  // unnamed namespace
 
-Status onCannotImplicitlyCreateCollection(OperationContext* opCtx,
-                                          const NamespaceString& ns) noexcept {
+Status onCannotImplicitlyCreateCollection(
+    OperationContext* opCtx, const CannotImplicitlyCreateCollectionInfo& exceptionInfo) noexcept {
+    if (exceptionInfo.getPolicy() == ImplicitCollectionCreationPolicyEnum::kDisallow) {
+        // The policy is to not create the collection, so there's nothing to do with this exception.
+        return Status::OK();
+    }
+    invariant(exceptionInfo.getPolicy() ==
+              ImplicitCollectionCreationPolicyEnum::kMoveToConfigServer);
     auto& handlerMap = createCollectionSerializerMap(opCtx->getServiceContext());
-    auto status = handlerMap.getForNs(ns)->onCannotImplicitlyCreateCollection(opCtx);
+    auto status =
+        handlerMap.getForNs(exceptionInfo.getNss())->createCollectionViaConfigServer(opCtx);
 
     if (status.isOK()) {
-        handlerMap.cleanupNs(ns);
+        handlerMap.cleanupNs(exceptionInfo.getNss());
     } else {
         // We only cleanup on success because that is our last chance for us to do so. This avoids
         // the scenario with multiple handlers for the same ns to exist at the same time if we

@@ -590,10 +590,19 @@ Collection* DatabaseImpl::createCollection(OperationContext* opCtx,
 
     invariant(opCtx->lockState()->isDbLockedForMode(name(), MODE_IX));
 
-    uassert(CannotImplicitlyCreateCollectionInfo(nss),
+    auto implicitCreatePolicy =
+        OperationShardingState::get(opCtx).getImplicitCollectionCreationPolicy();
+    /*
+    uassert(50522,
+            "request is not allowed to create collection",
+            serverGlobalParams.clusterRole != ClusterRole::ShardServer ||
+                implicitCreatePolicy != ImplicitCollectionCreationPolicyEnum::kDisallow);
+                */
+
+    uassert(CannotImplicitlyCreateCollectionInfo(nss, implicitCreatePolicy),
             "request doesn't allow collection to be created implicitly",
             serverGlobalParams.clusterRole != ClusterRole::ShardServer ||
-                OperationShardingState::get(opCtx).allowImplicitCollectionCreation() ||
+                implicitCreatePolicy == ImplicitCollectionCreationPolicyEnum::kAllow ||
                 options.temp);
 
     auto coordinator = repl::ReplicationCoordinator::get(opCtx);

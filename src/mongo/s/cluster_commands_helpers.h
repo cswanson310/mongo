@@ -41,6 +41,7 @@
 #include "mongo/s/async_requests_sender.h"
 #include "mongo/s/catalog_cache.h"
 #include "mongo/s/commands/strategy.h"
+#include "mongo/s/write_ops/implicit_collection_creation_policy_gen.h"
 
 namespace mongo {
 
@@ -88,7 +89,7 @@ BSONObj appendShardVersion(BSONObj cmdObj, ChunkVersion version);
 /**
  * Returns a copy of 'cmdObj' with 'allowImplicitCollectionCreation' appended.
  */
-BSONObj appendAllowImplicitCreate(BSONObj cmdObj, bool allow);
+BSONObj appendAllowImplicitCreate(BSONObj cmdObj, ImplicitCollectionCreationPolicyEnum policy);
 
 /**
  * Utility for dispatching unversioned commands to all shards in a cluster.
