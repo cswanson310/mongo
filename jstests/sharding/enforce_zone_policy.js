@@ -53,6 +53,7 @@ st.startBalancer();
 
 // Initial balance
 assertBalanceCompleteAndStable(checkClusterEvenlyBalanced, 'initial');
+assert.eq(testDB.foo.aggregate([{$count: "count"}]).toArray()[0], {count: 9});
 
 // Spread chunks correctly across zones
 st.addShardTag(st.shard0.shardName, 'a');
@@ -81,6 +82,7 @@ assertBalanceCompleteAndStable(function() {
 st.removeTagRange('test.foo', {_id: -100}, {_id: 100}, 'a');
 st.removeTagRange('test.foo', {_id: MinKey}, {_id: -100}, 'b');
 st.removeTagRange('test.foo', {_id: 100}, {_id: MaxKey}, 'b');
+assert.eq(testDB.foo.aggregate([{$count: "count"}]).toArray()[0], {count: 9});
 
 st.removeShardTag(st.shard1.shardName, 'a');
 st.removeShardTag(st.shard2.shardName, 'b');
@@ -92,12 +94,14 @@ assertBalanceCompleteAndStable(function() {
     return counts[st.shard0.shardName] == 11 && counts[st.shard1.shardName] == 0 &&
         counts[st.shard2.shardName] == 0;
 }, 'all chunks to zone a');
+assert.eq(testDB.foo.aggregate([{$count: "count"}]).toArray()[0], {count: 9});
 
 // Remove all zones and ensure collection is correctly redistributed
 st.removeShardTag(st.shard0.shardName, 'a');
 st.removeTagRange('test.foo', {_id: MinKey}, {_id: MaxKey}, 'a');
 
 assertBalanceCompleteAndStable(checkClusterEvenlyBalanced, 'final');
+assert.eq(testDB.foo.aggregate([{$count: "count"}]).toArray()[0], {count: 9});
 
 st.stop();
 })();
