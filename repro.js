@@ -1,9 +1,9 @@
 (function() {
 "use strict";
-const st = new ShardingTest({mongos: 6, shards: 3, config: 3, enableBalancer: true});
+const st = new ShardingTest({mongos: 1, shards: 3, config: 3, enableBalancer: true});
 
 const coll = st.s0.getDB("test").remove_shard_agg;
-const allMongoses = [st.s0, st.s1, st.s2, st.s3, st.s4, st.s5];
+const allMongoses = [st.s0];
 const bulk = coll.initializeUnorderedBulkOp();
 for (let i = 0; i < 2000; ++i) {
     bulk.insert({region: i % 2 == 0 ? "US" : "EU", _id: i});
@@ -41,10 +41,11 @@ st.printShardingStatus();
 let aggThreads = [];
 for (let mongos of allMongoses) {
     aggThreads.push(startParallelShell(() => {
-        while (db.SENTINEL.findOne() == null) {
+        db = db.getSiblingDB("test");
+        while (db.getSiblingDB("test2").SENTINEL.findOne() == null) {
             // db.something_else.find().itcount();
             let x = db.remove_shard_agg.aggregate([{$count: "total"}]).toArray()[0];
-            // sleep(50);
+            sleep(50);
         }
     }, mongos.port));
 }
@@ -79,7 +80,6 @@ assert.soon(
     60000);
 removeStatus = assert.commandWorkedOrFailedWithCode(
     st.getDB("admin").runCommand({removeShard: st.shard2.shardName}), ErrorCodes.ShardNotFound);
-shard2.stopSet();
 // flushConfigs();
 const rst = new ReplSetTest({
     nodes: 1,
@@ -109,12 +109,17 @@ assert.soon(
     60000);
 flushConfigs();
 
-shard0.stopSet();
-assert.commandWorked(st.s.getDB("test").SENTINEL.insertOne({_id: "test over"}));
+assert.commandWorked(st.s.getDB("test2").SENTINEL.insertOne({_id: "test over"}));
 for (let threadJoiner of aggThreads) {
     threadJoiner();
 }
 
 rst.stopSet();
+// Add shards back so they can be stopped.
+/*
+for (let shard of [st.rs0, st.rs1]) {
+    assert.commandWorked(st.adminCommand({addShard: shard.getURL()}));
+}
+*/
 st.stop();
 }());
