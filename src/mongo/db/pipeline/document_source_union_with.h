@@ -129,6 +129,8 @@ private:
     boost::intrusive_ptr<ExpressionContext> _unionExpCtx;
 
     NamespaceString _unionNss;
+    NamespaceString _resolvedNss;  // Can be the same as '_unionNss', but different if that
+                                   // namespace is a view.
 
     std::unique_ptr<Pipeline, PipelineDeleter> _pipeline;
     std::vector<BSONObj> _rawPipeline;

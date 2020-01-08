@@ -80,9 +80,15 @@ DocumentSourceUnionWith::DocumentSourceUnionWith(
       _unionNss(std::move(unionNss)),
       _rawPipeline(std::move(pipeline)) {
 
-    // Copy the ExpressionContext of the base aggregation, using the inner namespace instead.
-    _unionExpCtx = expCtx->copyWith(_unionNss);
+    // Prepend any stages from a view definition.
+    const auto& resolvedNamespace = expCtx->getResolvedNamespace(_unionNss);
+    _resolvedNss = resolvedNamespace.ns;
 
+    // Copy the ExpressionContext of the base aggregation, using the inner namespace instead.
+    _unionExpCtx = expCtx->copyWith(_resolvedNss);
+
+    _rawPipeline.insert(
+        _rawPipeline.begin(), resolvedNamespace.pipeline.begin(), resolvedNamespace.pipeline.end());
     // TODO SERVER-XXXX: This can't happen here in a sharded cluster, since it attaches a
     // non-serializable $cursor stage.
     _pipeline = pExpCtx->mongoProcessInterface->makePipeline(_rawPipeline, _unionExpCtx);
