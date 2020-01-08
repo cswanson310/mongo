@@ -335,4 +335,21 @@ assert.commandWorked(viewsDB.runCommand({
             [{$facet: {nested: graphLookupPipeline}}],
             [{nested: [{_id: "New York", matchedId1: "New York", matchedId2: "New York"}]}]);
     }());
+
+(function testUnionReadFromView() {
+    assert.eq(allDocuments.length, coll.aggregate([]).itcount());
+    assert.eq(2 * allDocuments.length,
+              coll.aggregate([{$unionWith: "emptyPipelineView"}]).itcount());
+    assert.eq(2 * allDocuments.length, coll.aggregate([{$unionWith: "identityView"}]).itcount());
+    assert.eq(
+        2 * allDocuments.length,
+        coll.aggregate(
+                [{$unionWith: {coll: "noIdView", pipeline: [{$match: {_id: {$exists: false}}}]}}])
+            .itcount());
+    assert.eq(
+        allDocuments.length + 1,
+        coll.aggregate(
+                [{$unionWith: {coll: "identityView", pipeline: [{$match: {_id: "New York"}}]}}])
+            .itcount());
+}());
 }());

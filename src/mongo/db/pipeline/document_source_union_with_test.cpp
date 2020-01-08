@@ -169,47 +169,53 @@ TEST_F(DocumentSourceUnionWithTest, UnionsWithNonEmptySubPipelines) {
 }
 
 TEST_F(DocumentSourceUnionWithTest, SerializeAndParseWithPipeline) {
+    auto expCtx = getExpCtx();
+    NamespaceString fromNs(expCtx->ns.db(), "coll");
+    expCtx->setResolvedNamespaces(StringMap<ExpressionContext::ResolvedNamespace>{
+        {fromNs.coll().toString(), {fromNs, std::vector<BSONObj>()}}});
     auto bson =
-        BSON("$unionWith" << BSON("coll"
-                                  << "foo"
-                                  << "pipeline"
-                                  << BSON_ARRAY(
-                                         BSON("$addFields" << BSON("a" << BSON("$const" << 3))))));
-    auto unionWith = DocumentSourceUnionWith::createFromBson(bson.firstElement(), getExpCtx());
+        BSON("$unionWith" << BSON(
+                 "coll" << fromNs.coll() << "pipeline"
+                        << BSON_ARRAY(BSON("$addFields" << BSON("a" << BSON("$const" << 3))))));
+    auto unionWith = DocumentSourceUnionWith::createFromBson(bson.firstElement(), expCtx);
     ASSERT(unionWith->getSourceName() == DocumentSourceUnionWith::kStageName);
     std::vector<Value> serializedArray;
     unionWith->serializeToArray(serializedArray);
     auto serializedBson = serializedArray[0].getDocument().toBson();
     ASSERT_BSONOBJ_EQ(serializedBson, bson);
-    unionWith = DocumentSourceUnionWith::createFromBson(serializedBson.firstElement(), getExpCtx());
+    unionWith = DocumentSourceUnionWith::createFromBson(serializedBson.firstElement(), expCtx);
     ASSERT(unionWith != nullptr);
     ASSERT(unionWith->getSourceName() == DocumentSourceUnionWith::kStageName);
 }
 
 TEST_F(DocumentSourceUnionWithTest, SerializeAndParseWithoutPipeline) {
-    auto bson = BSON("$unionWith"
-                     << "foo");
-    auto desugaredBson = BSON("$unionWith" << BSON("coll"
-                                                   << "foo"
-                                                   << "pipeline" << BSONArray()));
-    auto unionWith = DocumentSourceUnionWith::createFromBson(bson.firstElement(), getExpCtx());
+    auto expCtx = getExpCtx();
+    NamespaceString fromNs(expCtx->ns.db(), "coll");
+    expCtx->setResolvedNamespaces(StringMap<ExpressionContext::ResolvedNamespace>{
+        {fromNs.coll().toString(), {fromNs, std::vector<BSONObj>()}}});
+    auto bson = BSON("$unionWith" << fromNs.coll());
+    auto desugaredBson =
+        BSON("$unionWith" << BSON("coll" << fromNs.coll() << "pipeline" << BSONArray()));
+    auto unionWith = DocumentSourceUnionWith::createFromBson(bson.firstElement(), expCtx);
     ASSERT(unionWith->getSourceName() == DocumentSourceUnionWith::kStageName);
     std::vector<Value> serializedArray;
     unionWith->serializeToArray(serializedArray);
     auto serializedBson = serializedArray[0].getDocument().toBson();
     ASSERT_BSONOBJ_EQ(serializedBson, desugaredBson);
-    unionWith = DocumentSourceUnionWith::createFromBson(serializedBson.firstElement(), getExpCtx());
+    unionWith = DocumentSourceUnionWith::createFromBson(serializedBson.firstElement(), expCtx);
     ASSERT(unionWith != nullptr);
     ASSERT(unionWith->getSourceName() == DocumentSourceUnionWith::kStageName);
 }
 
 TEST_F(DocumentSourceUnionWithTest, SerializeAndParseWithoutPipelineExtraSubobject) {
-    auto bson = BSON("$unionWith" << BSON("coll"
-                                          << "foo"));
-    auto desugaredBson = BSON("$unionWith" << BSON("coll"
-                                                   << "foo"
-                                                   << "pipeline" << BSONArray()));
-    auto unionWith = DocumentSourceUnionWith::createFromBson(bson.firstElement(), getExpCtx());
+    auto expCtx = getExpCtx();
+    NamespaceString fromNs(expCtx->ns.db(), "coll");
+    expCtx->setResolvedNamespaces(StringMap<ExpressionContext::ResolvedNamespace>{
+        {fromNs.coll().toString(), {fromNs, std::vector<BSONObj>()}}});
+    auto bson = BSON("$unionWith" << BSON("coll" << fromNs.coll()));
+    auto desugaredBson =
+        BSON("$unionWith" << BSON("coll" << fromNs.coll() << "pipeline" << BSONArray()));
+    auto unionWith = DocumentSourceUnionWith::createFromBson(bson.firstElement(), expCtx);
     ASSERT(unionWith->getSourceName() == DocumentSourceUnionWith::kStageName);
     std::vector<Value> serializedArray;
     unionWith->serializeToArray(serializedArray);
@@ -221,38 +227,39 @@ TEST_F(DocumentSourceUnionWithTest, SerializeAndParseWithoutPipelineExtraSubobje
 }
 
 TEST_F(DocumentSourceUnionWithTest, ParseErrors) {
+    auto expCtx = getExpCtx();
+    NamespaceString fromNs(expCtx->ns.db(), "coll");
+    expCtx->setResolvedNamespaces(StringMap<ExpressionContext::ResolvedNamespace>{
+        {fromNs.coll().toString(), {fromNs, std::vector<BSONObj>()}}});
+    ASSERT_THROWS_CODE(
+        DocumentSourceUnionWith::createFromBson(BSON("$unionWith" << false).firstElement(), expCtx),
+        AssertionException,
+        ErrorCodes::FailedToParse);
     ASSERT_THROWS_CODE(DocumentSourceUnionWith::createFromBson(
-                           BSON("$unionWith" << false).firstElement(), getExpCtx()),
-                       AssertionException,
-                       ErrorCodes::FailedToParse);
-    ASSERT_THROWS_CODE(DocumentSourceUnionWith::createFromBson(BSON("$unionWith" << BSON("coll"
-                                                                                         << "foo"
-                                                                                         << "coll"
-                                                                                         << "bar"))
-                                                                   .firstElement(),
-                                                               getExpCtx()),
+                           BSON("$unionWith" << BSON("coll" << fromNs.coll() << "coll"
+                                                            << "bar"))
+                               .firstElement(),
+                           expCtx),
                        AssertionException,
                        40413);
     ASSERT_THROWS_CODE(
         DocumentSourceUnionWith::createFromBson(
-            BSON("$unionWith" << BSON("coll"
-                                      << "foo"
-                                      << "pipeline"
-                                      << BSON_ARRAY(BSON("$addFields" << BSON("a" << 3))) << "coll"
-                                      << "bar"))
+            BSON("$unionWith" << BSON("coll" << fromNs.coll() << "pipeline"
+                                             << BSON_ARRAY(BSON("$addFields" << BSON("a" << 3)))
+                                             << "coll"
+                                             << "bar"))
                 .firstElement(),
-            getExpCtx()),
+            expCtx),
         AssertionException,
         40413);
     ASSERT_THROWS_CODE(
         DocumentSourceUnionWith::createFromBson(
-            BSON("$unionWith" << BSON("coll"
-                                      << "foo"
-                                      << "pipeline"
-                                      << BSON_ARRAY(BSON("$addFields" << BSON("a" << 3))) << "myDog"
-                                      << "bar"))
+            BSON("$unionWith" << BSON("coll" << fromNs.coll() << "pipeline"
+                                             << BSON_ARRAY(BSON("$addFields" << BSON("a" << 3)))
+                                             << "myDog"
+                                             << "bar"))
                 .firstElement(),
-            getExpCtx()),
+            expCtx),
         AssertionException,
         40415);
     ASSERT_THROWS_CODE(
@@ -372,5 +379,68 @@ TEST_F(DocumentSourceUnionWithTest, DependencyAnalysisReportsReferencedFieldsBef
     ASSERT_FALSE(deps.needWholeDocument);
 }
 
+TEST_F(DocumentSourceUnionWithTest, RespectsViewDefinition) {
+    auto expCtx = getExpCtx();
+    NamespaceString fromNs(expCtx->ns.db(), "coll");
+    expCtx->setResolvedNamespaces(StringMap<ExpressionContext::ResolvedNamespace>{
+        {fromNs.coll().toString(),
+         {fromNs, std::vector<BSONObj>{fromjson("{$match: {_id: {$mod: [2, 0]}}}")}}}});
+
+    // Mock out the foreign collection.
+    std::deque<DocumentSource::GetNextResult> mockForeignContents{Document{{"_id", 1}},
+                                                                  Document{{"_id", 2}}};
+    expCtx->mongoProcessInterface =
+        std::make_shared<MockMongoInterface>(std::move(mockForeignContents));
+
+    auto bson = BSON("$unionWith" << fromNs.coll());
+    auto unionWith = DocumentSourceUnionWith::createFromBson(bson.firstElement(), expCtx);
+    const auto localMock = DocumentSourceMock::createForTest({Document{{"_id"_sd, "local"_sd}}});
+    unionWith->setSource(localMock.get());
+
+    auto result = unionWith->getNext();
+    ASSERT_TRUE(result.isAdvanced());
+    ASSERT_DOCUMENT_EQ(result.getDocument(), (Document{{"_id"_sd, "local"_sd}}));
+
+    result = unionWith->getNext();
+    ASSERT_TRUE(result.isAdvanced());
+    ASSERT_DOCUMENT_EQ(result.getDocument(), (Document{{"_id"_sd, 2}}));
+
+    ASSERT_TRUE(unionWith->getNext().isEOF());
+}
+
+TEST_F(DocumentSourceUnionWithTest, ConcatenatesViewDefinitionToPipeline) {
+    auto expCtx = getExpCtx();
+    NamespaceString fromNs(expCtx->ns.db(), "coll");
+    expCtx->setResolvedNamespaces(StringMap<ExpressionContext::ResolvedNamespace>{
+        {fromNs.coll().toString(),
+         {fromNs, std::vector<BSONObj>{fromjson("{$match: {_id: {$mod: [2, 0]}}}")}}}});
+
+    // Mock out the foreign collection.
+    std::deque<DocumentSource::GetNextResult> mockForeignContents{Document{{"_id", 1}},
+                                                                  Document{{"_id", 2}}};
+    expCtx->mongoProcessInterface =
+        std::make_shared<MockMongoInterface>(std::move(mockForeignContents));
+
+    const auto localMock = DocumentSourceMock::createForTest({Document{{"_id"_sd, "local"_sd}}});
+    auto bson =
+        BSON("$unionWith" << BSON(
+                 "coll" << fromNs.coll() << "pipeline"
+                        << BSON_ARRAY(fromjson(
+                               "{$addFields: {newField: 'evidence of pipeline being applied'}}"))));
+    auto unionWith = DocumentSourceUnionWith::createFromBson(bson.firstElement(), expCtx);
+    unionWith->setSource(localMock.get());
+
+    auto result = unionWith->getNext();
+    ASSERT_TRUE(result.isAdvanced());
+    ASSERT_DOCUMENT_EQ(result.getDocument(), (Document{{"_id"_sd, "local"_sd}}));
+
+    result = unionWith->getNext();
+    ASSERT_TRUE(result.isAdvanced());
+    ASSERT_DOCUMENT_EQ(
+        result.getDocument(),
+        (Document{{"_id"_sd, 2}, {"newField"_sd, "evidence of pipeline being applied"_sd}}));
+
+    ASSERT_TRUE(unionWith->getNext().isEOF());
+}
 }  // namespace
 }  // namespace mongo

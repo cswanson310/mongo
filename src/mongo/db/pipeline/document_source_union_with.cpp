@@ -28,6 +28,8 @@
  */
 #include "mongo/platform/basic.h"
 
+#include <iterator>
+
 #include "mongo/db/pipeline/document_source_union_with.h"
 #include "mongo/db/pipeline/document_source_union_with_gen.h"
 
@@ -36,6 +38,19 @@ namespace mongo {
 REGISTER_TEST_DOCUMENT_SOURCE(unionWith,
                               DocumentSourceUnionWith::LiteParsed::parse,
                               DocumentSourceUnionWith::createFromBson);
+
+namespace {
+std::unique_ptr<Pipeline, PipelineDeleter> buildPipelineFromViewDefinition(
+    const boost::intrusive_ptr<ExpressionContext>& expCtx,
+    ExpressionContext::ResolvedNamespace resolvedNs,
+    std::vector<BSONObj> currentPipeline) {
+    currentPipeline.insert(currentPipeline.begin(),
+                           std::make_move_iterator(resolvedNs.pipeline.begin()),
+                           std::make_move_iterator(resolvedNs.pipeline.end()));
+    return uassertStatusOK(Pipeline::parse(currentPipeline, expCtx->copyWith(resolvedNs.ns)));
+}
+
+}  // namespace
 
 std::unique_ptr<DocumentSourceUnionWith::LiteParsed> DocumentSourceUnionWith::LiteParsed::parse(
     const AggregationRequest& request, const BSONElement& spec) {
@@ -89,8 +104,8 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceUnionWith::createFromBson(
     }
     return make_intrusive<DocumentSourceUnionWith>(
         expCtx,
-        uassertStatusOK(
-            Pipeline::parse(std::move(pipeline), expCtx->copyWith(std::move(unionNss)))));
+        buildPipelineFromViewDefinition(
+            expCtx, expCtx->getResolvedNamespace(std::move(unionNss)), std::move(pipeline)));
 }
 
 DocumentSource::GetNextResult DocumentSourceUnionWith::doGetNext() {
