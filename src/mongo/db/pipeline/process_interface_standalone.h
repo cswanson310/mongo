@@ -110,10 +110,6 @@ public:
                                         const NamespaceString& ns,
                                         const std::vector<BSONObj>& indexSpecs);
     void dropCollection(OperationContext* opCtx, const NamespaceString& collection);
-    std::unique_ptr<Pipeline, PipelineDeleter> makePipeline(
-        const std::vector<BSONObj>& rawPipeline,
-        const boost::intrusive_ptr<ExpressionContext>& expCtx,
-        const MakePipelineOptions opts = MakePipelineOptions{}) final;
     std::unique_ptr<Pipeline, PipelineDeleter> attachCursorSourceToPipeline(
         const boost::intrusive_ptr<ExpressionContext>& expCtx, Pipeline* pipeline) override;
     std::unique_ptr<Pipeline, PipelineDeleter> attachCursorSourceToPipelineForLocalRead(

@@ -433,4 +433,25 @@ private:
     bool _dismissed = false;
 };
 
+struct MakePipelineOptions {
+    MakePipelineOptions(){};
+
+    bool optimize = true;
+    bool attachCursorSource = true;
+};
+
+/**
+ * Parses a Pipeline from a vector of BSONObjs representing DocumentSources. The state of the
+ * returned pipeline will depend upon the supplied MakePipelineOptions:
+ * - The boolean opts.optimize determines whether the pipeline will be optimized.
+ * - If opts.attachCursorSource is false, the pipeline will be returned without attempting to add an
+ *   initial cursor source.
+ *
+ * This function throws if parsing the pipeline failed.
+ */
+std::unique_ptr<Pipeline, PipelineDeleter> makePipeline(
+    const std::vector<BSONObj>& rawPipeline,
+    const boost::intrusive_ptr<ExpressionContext>& expCtx,
+    const MakePipelineOptions opts = MakePipelineOptions{});
+
 }  // namespace mongo

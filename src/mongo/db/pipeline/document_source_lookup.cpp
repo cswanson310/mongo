@@ -50,8 +50,6 @@ namespace mongo {
 using boost::intrusive_ptr;
 using std::vector;
 
-constexpr size_t DocumentSourceLookUp::kMaxSubPipelineDepth;
-
 DocumentSourceLookUp::DocumentSourceLookUp(NamespaceString fromNs,
                                            std::string as,
                                            const boost::intrusive_ptr<ExpressionContext>& expCtx)
@@ -68,8 +66,8 @@ DocumentSourceLookUp::DocumentSourceLookUp(NamespaceString fromNs,
     _fromExpCtx->subPipelineDepth += 1;
     uassert(ErrorCodes::MaxSubPipelineDepthExceeded,
             str::stream() << "Maximum number of nested $lookup sub-pipelines exceeded. Limit is "
-                          << kMaxSubPipelineDepth,
-            _fromExpCtx->subPipelineDepth <= kMaxSubPipelineDepth);
+                          << ExpressionContext::kMaxSubPipelineViewDepth,
+            _fromExpCtx->subPipelineDepth <= ExpressionContext::kMaxSubPipelineViewDepth);
 }
 
 DocumentSourceLookUp::DocumentSourceLookUp(NamespaceString fromNs,
@@ -288,18 +286,17 @@ std::unique_ptr<Pipeline, PipelineDeleter> DocumentSourceLookUp::buildPipeline(
 
     // If we don't have a cache, build and return the pipeline immediately.
     if (!_cache || _cache->isAbandoned()) {
-        return pExpCtx->mongoProcessInterface->makePipeline(_resolvedPipeline, _fromExpCtx);
+        return makePipeline(_resolvedPipeline, _fromExpCtx);
     }
 
     // Tailor the pipeline construction for our needs. We want a non-optimized pipeline without a
     // cursor source.
-    MongoProcessInterface::MakePipelineOptions pipelineOpts;
+    MakePipelineOptions pipelineOpts;
     pipelineOpts.optimize = false;
     pipelineOpts.attachCursorSource = false;
 
     // Construct the basic pipeline without a cache stage.
-    auto pipeline =
-        pExpCtx->mongoProcessInterface->makePipeline(_resolvedPipeline, _fromExpCtx, pipelineOpts);
+    auto pipeline = makePipeline(_resolvedPipeline, _fromExpCtx, pipelineOpts);
 
     // Add the cache stage at the end and optimize. During the optimization process, the cache will
     // either move itself to the correct position in the pipeline, or will abandon itself if no

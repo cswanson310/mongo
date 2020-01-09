@@ -33,27 +33,10 @@
 
 #include "mongo/db/pipeline/document_source.h"
 #include "mongo/db/pipeline/document_source_mock.h"
+#include "mongo/db/pipeline/pipeline.h"
 #include "mongo/util/assert_util.h"
 
 namespace mongo {
-
-std::unique_ptr<Pipeline, PipelineDeleter>
-StubMongoProcessInterfaceLookupSingleDocument::makePipeline(
-    const std::vector<BSONObj>& rawPipeline,
-    const boost::intrusive_ptr<ExpressionContext>& expCtx,
-    const MakePipelineOptions opts) {
-    auto pipeline = uassertStatusOK(Pipeline::parse(rawPipeline, expCtx));
-
-    if (opts.optimize) {
-        pipeline->optimizePipeline();
-    }
-
-    if (opts.attachCursorSource) {
-        pipeline = attachCursorSourceToPipeline(expCtx, pipeline.release());
-    }
-
-    return pipeline;
-}
 
 std::unique_ptr<Pipeline, PipelineDeleter>
 StubMongoProcessInterfaceLookupSingleDocument::attachCursorSourceToPipelineForLocalRead(

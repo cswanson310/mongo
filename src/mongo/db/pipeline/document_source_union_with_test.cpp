@@ -173,6 +173,8 @@ TEST_F(DocumentSourceUnionWithTest, SerializeAndParseWithPipeline) {
     NamespaceString fromNs(expCtx->ns.db(), "coll");
     expCtx->setResolvedNamespaces(StringMap<ExpressionContext::ResolvedNamespace>{
         {fromNs.coll().toString(), {fromNs, std::vector<BSONObj>()}}});
+    expCtx->mongoProcessInterface =
+        std::make_unique<MockMongoInterface>(std::deque<DocumentSource::GetNextResult>{});
     auto bson =
         BSON("$unionWith" << BSON(
                  "coll" << fromNs.coll() << "pipeline"
@@ -193,6 +195,8 @@ TEST_F(DocumentSourceUnionWithTest, SerializeAndParseWithoutPipeline) {
     NamespaceString fromNs(expCtx->ns.db(), "coll");
     expCtx->setResolvedNamespaces(StringMap<ExpressionContext::ResolvedNamespace>{
         {fromNs.coll().toString(), {fromNs, std::vector<BSONObj>()}}});
+    expCtx->mongoProcessInterface =
+        std::make_unique<MockMongoInterface>(std::deque<DocumentSource::GetNextResult>{});
     auto bson = BSON("$unionWith" << fromNs.coll());
     auto desugaredBson =
         BSON("$unionWith" << BSON("coll" << fromNs.coll() << "pipeline" << BSONArray()));
@@ -231,6 +235,8 @@ TEST_F(DocumentSourceUnionWithTest, ParseErrors) {
     NamespaceString fromNs(expCtx->ns.db(), "coll");
     expCtx->setResolvedNamespaces(StringMap<ExpressionContext::ResolvedNamespace>{
         {fromNs.coll().toString(), {fromNs, std::vector<BSONObj>()}}});
+    expCtx->mongoProcessInterface =
+        std::make_unique<MockMongoInterface>(std::deque<DocumentSource::GetNextResult>{});
     ASSERT_THROWS_CODE(
         DocumentSourceUnionWith::createFromBson(BSON("$unionWith" << false).firstElement(), expCtx),
         AssertionException,
@@ -441,6 +447,24 @@ TEST_F(DocumentSourceUnionWithTest, ConcatenatesViewDefinitionToPipeline) {
         (Document{{"_id"_sd, 2}, {"newField"_sd, "evidence of pipeline being applied"_sd}}));
 
     ASSERT_TRUE(unionWith->getNext().isEOF());
+}
+
+TEST_F(DocumentSourceUnionWithTest, RejectUnionWhenDepthLimitIsExceeded) {
+    auto expCtx = getExpCtx();
+    NamespaceString fromNs("test", "coll");
+    expCtx->setResolvedNamespaces(StringMap<ExpressionContext::ResolvedNamespace>{
+        {fromNs.coll().toString(), {fromNs, std::vector<BSONObj>()}}});
+
+    expCtx->subPipelineDepth = ExpressionContext::kMaxSubPipelineViewDepth;
+
+    ASSERT_THROWS_CODE(
+        DocumentSourceUnionWith::createFromBson(
+            BSON("$unionWith" << BSON("coll" << fromNs.coll() << "pipeline"
+                                             << BSON_ARRAY(BSON("$match" << BSON("x" << 1)))))
+                .firstElement(),
+            expCtx),
+        AssertionException,
+        ErrorCodes::MaxSubPipelineDepthExceeded);
 }
 }  // namespace
 }  // namespace mongo

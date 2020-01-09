@@ -443,23 +443,6 @@ void MongoInterfaceStandalone::dropCollection(OperationContext* opCtx, const Nam
         opCtx, ns, result, {}, DropCollectionSystemCollectionMode::kDisallowSystemCollectionDrops));
 }
 
-std::unique_ptr<Pipeline, PipelineDeleter> MongoInterfaceStandalone::makePipeline(
-    const std::vector<BSONObj>& rawPipeline,
-    const boost::intrusive_ptr<ExpressionContext>& expCtx,
-    const MakePipelineOptions opts) {
-    auto pipeline = uassertStatusOK(Pipeline::parse(rawPipeline, expCtx));
-
-    if (opts.optimize) {
-        pipeline->optimizePipeline();
-    }
-
-    if (opts.attachCursorSource) {
-        pipeline = attachCursorSourceToPipeline(expCtx, pipeline.release());
-    }
-
-    return pipeline;
-}
-
 unique_ptr<Pipeline, PipelineDeleter> MongoInterfaceStandalone::attachCursorSourceToPipeline(
     const boost::intrusive_ptr<ExpressionContext>& expCtx, Pipeline* ownedPipeline) {
     return attachCursorSourceToPipelineForLocalRead(expCtx, ownedPipeline);

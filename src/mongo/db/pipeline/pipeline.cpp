@@ -657,4 +657,21 @@ boost::intrusive_ptr<DocumentSource> Pipeline::popFrontWithNameAndCriteria(
     return popFront();
 }
 
+std::unique_ptr<Pipeline, PipelineDeleter> makePipeline(
+    const std::vector<BSONObj>& rawPipeline,
+    const boost::intrusive_ptr<ExpressionContext>& expCtx,
+    const MakePipelineOptions opts) {
+    auto pipeline = uassertStatusOK(Pipeline::parse(rawPipeline, expCtx));
+
+    if (opts.optimize) {
+        pipeline->optimizePipeline();
+    }
+
+    if (opts.attachCursorSource) {
+        pipeline =
+            expCtx->mongoProcessInterface->attachCursorSourceToPipeline(expCtx, pipeline.release());
+    }
+
+    return pipeline;
+}
 }  // namespace mongo

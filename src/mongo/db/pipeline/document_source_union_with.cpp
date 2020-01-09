@@ -47,7 +47,15 @@ std::unique_ptr<Pipeline, PipelineDeleter> buildPipelineFromViewDefinition(
     currentPipeline.insert(currentPipeline.begin(),
                            std::make_move_iterator(resolvedNs.pipeline.begin()),
                            std::make_move_iterator(resolvedNs.pipeline.end()));
-    return uassertStatusOK(Pipeline::parse(currentPipeline, expCtx->copyWith(resolvedNs.ns)));
+    auto unionExpCtx = expCtx->copyWith(resolvedNs.ns);
+    unionExpCtx->subPipelineDepth += 1;
+    uassert(ErrorCodes::MaxSubPipelineDepthExceeded,
+            str::stream() << "Maximum number of nested $lookup sub-pipelines exceeded. Limit is "
+                          << ExpressionContext::kMaxSubPipelineViewDepth,
+            unionExpCtx->subPipelineDepth <= ExpressionContext::kMaxSubPipelineViewDepth);
+    MakePipelineOptions options;
+    options.attachCursorSource = false;
+    return makePipeline(currentPipeline, unionExpCtx, options);
 }
 
 }  // namespace
