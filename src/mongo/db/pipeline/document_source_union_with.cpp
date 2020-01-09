@@ -86,12 +86,20 @@ DocumentSourceUnionWith::DocumentSourceUnionWith(
 
     // Copy the ExpressionContext of the base aggregation, using the inner namespace instead.
     _unionExpCtx = expCtx->copyWith(_resolvedNss);
+    _unionExpCtx->subPipelineDepth += 1;
+    // TODO add test for this.
+    uassert(ErrorCodes::MaxSubPipelineDepthExceeded,
+            str::stream() << "Maximum number of nested $lookup sub-pipelines exceeded. Limit is "
+                          << ExpressionContext::kMaxSubPipelineViewDepth,
+            _unionExpCtx->subPipelineDepth <= ExpressionContext::kMaxSubPipelineViewDepth);
 
     _rawPipeline.insert(
         _rawPipeline.begin(), resolvedNamespace.pipeline.begin(), resolvedNamespace.pipeline.end());
-    // TODO SERVER-XXXX: This can't happen here in a sharded cluster, since it attaches a
-    // non-serializable $cursor stage.
-    _pipeline = pExpCtx->mongoProcessInterface->makePipeline(_rawPipeline, _unionExpCtx);
+    if (!expCtx->isParsingViewDefinition) {
+        // TODO SERVER-XXXX: This can't happen here in a sharded cluster, since it attaches a
+        // non-serializable $cursor stage.
+        _pipeline = pExpCtx->mongoProcessInterface->makePipeline(_rawPipeline, _unionExpCtx);
+    }
 }
 
 boost::intrusive_ptr<DocumentSource> DocumentSourceUnionWith::createFromBson(

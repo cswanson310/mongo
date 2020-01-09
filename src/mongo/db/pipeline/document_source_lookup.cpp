@@ -50,8 +50,6 @@ namespace mongo {
 using boost::intrusive_ptr;
 using std::vector;
 
-constexpr size_t DocumentSourceLookUp::kMaxSubPipelineDepth;
-
 DocumentSourceLookUp::DocumentSourceLookUp(NamespaceString fromNs,
                                            std::string as,
                                            const boost::intrusive_ptr<ExpressionContext>& expCtx)
@@ -68,8 +66,8 @@ DocumentSourceLookUp::DocumentSourceLookUp(NamespaceString fromNs,
     _fromExpCtx->subPipelineDepth += 1;
     uassert(ErrorCodes::MaxSubPipelineDepthExceeded,
             str::stream() << "Maximum number of nested $lookup sub-pipelines exceeded. Limit is "
-                          << kMaxSubPipelineDepth,
-            _fromExpCtx->subPipelineDepth <= kMaxSubPipelineDepth);
+                          << ExpressionContext::kMaxSubPipelineViewDepth,
+            _fromExpCtx->subPipelineDepth <= ExpressionContext::kMaxSubPipelineViewDepth);
 }
 
 DocumentSourceLookUp::DocumentSourceLookUp(NamespaceString fromNs,

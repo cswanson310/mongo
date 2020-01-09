@@ -352,4 +352,35 @@ assert.commandWorked(viewsDB.runCommand({
                 [{$unionWith: {coll: "identityView", pipeline: [{$match: {_id: "New York"}}]}}])
             .itcount());
 }());
+
+(function testUnionInViewDefinition() {
+    const secondCollection = viewsDB.secondCollection;
+    secondCollection.drop();
+    assert.commandWorked(secondCollection.insert(allDocuments));
+    const viewName = "unionView";
+
+    // Test with a simple $unionWith with no custom pipeline.
+    assert.commandWorked(viewsDB.runCommand({
+        create: viewName,
+        viewOn: coll.getName(),
+        pipeline: [{$unionWith: secondCollection.getName()}]
+    }));
+    assert.eq(2 * allDocuments.length, viewsDB[viewName].find().itcount());
+    assert.eq(allDocuments.length,
+              viewsDB[viewName].aggregate([{$group: {_id: "$_id"}}]).itcount());
+    assert.eq(allDocuments.length, viewsDB[viewName].distinct("_id").length);
+    viewsDB[viewName].drop();
+
+    // Now test again with a custom pipeline in the view definition.
+    assert.commandWorked(viewsDB.runCommand({
+        create: viewName,
+        viewOn: coll.getName(),
+        pipeline:
+            [{$unionWith: {coll: secondCollection.getName(), pipeline: [{$match: {state: "NY"}}]}}]
+    }));
+    assert.eq(allDocuments.length + 1, viewsDB[viewName].find().itcount());
+    assert.eq(allDocuments.length,
+              viewsDB[viewName].aggregate([{$group: {_id: "$_id"}}]).itcount());
+    assert.eq(allDocuments.length, viewsDB[viewName].distinct("_id").length);
+}());
 }());

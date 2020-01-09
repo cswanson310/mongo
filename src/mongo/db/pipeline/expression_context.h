@@ -59,6 +59,7 @@ namespace mongo {
 
 class ExpressionContext : public RefCountable {
 public:
+    static constexpr size_t kMaxSubPipelineViewDepth = 20;
     struct ResolvedNamespace {
         ResolvedNamespace() = default;
         ResolvedNamespace(NamespaceString ns, std::vector<BSONObj> pipeline);

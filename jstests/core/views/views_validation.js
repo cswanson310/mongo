@@ -43,6 +43,10 @@ function makeFacet(from) {
     return {$facet: {"Facet Key": [makeLookup(from)]}};
 }
 
+function makeUnion(from) {
+    return {$unionWith: from};
+}
+
 function clear() {
     assert.commandWorked(viewsDb.dropDatabase());
 }
@@ -51,17 +55,41 @@ clear();
 
 // Check that simple cycles are disallowed.
 makeView("a", "a", [], ErrorCodes.GraphContainsCycle);
-makeView("a", "b", [makeLookup("a")], ErrorCodes.GraphContainsCycle);
 clear();
 
-makeView("a", "b", ErrorCodes.OK);
+makeView("a", "b");
 makeView("b", "a", [], ErrorCodes.GraphContainsCycle);
-makeView("b", "c", [makeLookup("a")], ErrorCodes.GraphContainsCycle);
 clear();
 
 makeView("a", "b");
 makeView("b", "c");
 makeView("c", "a", [], ErrorCodes.GraphContainsCycle);
+clear();
+
+// Test that $lookup checks for cycles.
+makeView("a", "b", [makeLookup("a")], ErrorCodes.GraphContainsCycle);
+clear();
+
+makeView("a", "b");
+makeView("b", "c", [makeLookup("a")], ErrorCodes.GraphContainsCycle);
+clear();
+
+// Test that $graphLookup checks for cycles.
+makeView("a", "b", [makeGraphLookup("a")], ErrorCodes.GraphContainsCycle);
+makeView("a", "b", [makeGraphLookup("b")]);
+makeView("b", "c", [makeGraphLookup("a")], ErrorCodes.GraphContainsCycle);
+clear();
+
+// Test that $facet checks for cycles.
+makeView("a", "b", [makeFacet("a")], ErrorCodes.GraphContainsCycle);
+makeView("a", "b", [makeFacet("b")]);
+makeView("b", "c", [makeFacet("a")], ErrorCodes.GraphContainsCycle);
+clear();
+
+// Test that $unionWith checks for cycles.
+makeView("a", "b", [makeUnion("a")], ErrorCodes.GraphContainsCycle);
+makeView("a", "b", [makeUnion("b")]);
+makeView("b", "c", [makeUnion("a")], ErrorCodes.GraphContainsCycle);
 clear();
 
 /*
@@ -82,30 +110,27 @@ clear();
 
 for (let i = 1; i <= kMaxViewDepth; i++) {
     let childView = "v" + (i + 1);
-    makeView("v" + i,
-             childView,
-             [makeLookup(childView), makeGraphLookup(childView), makeFacet(childView)]);
+    makeView("v" + i, childView, [
+        makeLookup(childView),
+        makeGraphLookup(childView),
+        makeFacet(childView),
+        makeUnion(childView),
+    ]);
 }
 
 // Check that any higher depth leads to failure
 makeView("v21", "v22", [], ErrorCodes.ViewDepthLimitExceeded);
 makeView("v0", "v1", [], ErrorCodes.ViewDepthLimitExceeded);
 makeView("v0", "ok", [makeLookup("v1")], ErrorCodes.ViewDepthLimitExceeded);
+makeView("v0", "ok", [makeGraphLookup("v1")], ErrorCodes.ViewDepthLimitExceeded);
+makeView("v0", "ok", [makeFacet("v1")], ErrorCodes.ViewDepthLimitExceeded);
+makeView("v0", "ok", [makeUnion("v1")], ErrorCodes.ViewDepthLimitExceeded);
 
 // But adding to the middle should be ok.
 makeView("vMid", "v10");
 clear();
 
-// Check that $graphLookup and $facet also check for cycles.
-makeView("a", "b", [makeGraphLookup("a")], ErrorCodes.GraphContainsCycle);
-makeView("a", "b", [makeGraphLookup("b")]);
-makeView("b", "c", [makeGraphLookup("a")], ErrorCodes.GraphContainsCycle);
-clear();
-
-makeView("a", "b", [makeFacet("a")], ErrorCodes.GraphContainsCycle);
-makeView("a", "b", [makeFacet("b")]);
-makeView("b", "c", [makeFacet("a")], ErrorCodes.GraphContainsCycle);
-clear();
+// Test that $facet checks for cycles.
 
 // Check that collMod also checks for cycles.
 makeView("a", "b");
