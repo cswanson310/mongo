@@ -38,6 +38,7 @@
 #include "mongo/db/pipeline/dependencies.h"
 #include "mongo/db/pipeline/document_source_cursor.h"
 #include "mongo/db/pipeline/document_source_group.h"
+#include "mongo/db/pipeline/limit_then_skip.h"
 #include "mongo/db/query/collation/collator_factory_interface.h"
 #include "mongo/db/query/plan_executor.h"
 
@@ -186,7 +187,7 @@ private:
         std::unique_ptr<GroupFromFirstDocumentTransformation> rewrittenGroupStage,
         QueryMetadataBitSet metadataAvailable,
         const BSONObj& queryObj,
-        boost::optional<long long> limit,
+        LimitThenSkip,
         const AggregationRequest* aggRequest,
         const MatchExpressionParser::AllowedFeatureSet& matcherFeatures,
         bool* hasNoRequirements);

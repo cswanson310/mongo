@@ -174,7 +174,7 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> attemptToGetExe
     BSONObj projectionObj,
     const QueryMetadataBitSet& metadataRequested,
     BSONObj sortObj,
-    boost::optional<long long> limit,
+    LimitThenSkip limitThenSkip,
     boost::optional<std::string> groupIdForDistinctScan,
     const AggregationRequest* aggRequest,
     const size_t plannerOpts,
@@ -184,7 +184,16 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> attemptToGetExe
     qr->setFilter(queryObj);
     qr->setProj(projectionObj);
     qr->setSort(sortObj);
-    qr->setLimit(limit);
+    qr->setSkip(limitThenSkip.skip);
+    // The query semantics are to apply the skip before the limit. The struct we have here is in the
+    // opposite order though. Consequently, if there is both a skip and limit, we have to subtract
+    // the skip from the limit.
+    // For example, this struct might say limit 10 then skip 5. Which is the same as skip 5 then
+    // limit 5.
+    if (limitThenSkip.limit) {
+        invariant(!limitThenSkip.skip || *limitThenSkip.skip < *limitThenSkip.limit);
+        qr->setLimit(*limitThenSkip.limit - limitThenSkip.skip.value_or(0));
+    }
     if (aggRequest) {
         qr->setExplain(static_cast<bool>(aggRequest->getExplain()));
         qr->setHint(aggRequest->getHint());
@@ -429,19 +438,20 @@ getSortAndGroupStagesFromPipeline(const Pipeline::SourceContainer& sources) {
     return std::make_pair(sortStage, groupStage);
 }
 
-boost::optional<long long> extractLimitForPushdown(Pipeline* pipeline) {
+LimitThenSkip extractSkipAndLimitForPushdown(Pipeline* pipeline) {
     // If the disablePipelineOptimization failpoint is enabled, then do not attempt the limit
     // pushdown optimization.
     if (MONGO_unlikely(disablePipelineOptimization.shouldFail())) {
-        return boost::none;
+        return {boost::none, boost::none};
     }
     auto&& sources = pipeline->getSources();
-    auto limit = DocumentSourceSort::extractLimitForPushdown(sources.begin(), &sources);
-    if (limit) {
-        // Removing $limit stages may have produced the opportunity for additional optimizations.
+    auto limitThenSkip =
+        DocumentSourceSort::extractSkipAndLimitForPushdown(sources.begin(), &sources);
+    if (limitThenSkip.skip || limitThenSkip.limit) {
+        // Removing stages may have produced the opportunity for additional optimizations.
         pipeline->optimizePipeline();
     }
-    return limit;
+    return limitThenSkip;
 }
 
 /**
@@ -525,7 +535,7 @@ PipelineD::buildInnerQueryExecutorGeneric(Collection* collection,
     // This only handles the case in which the the $limit can logically be swapped to the front of
     // the pipeline. We can also push down a $limit which comes after a $sort into the PlanStage
     // layer, but that is handled elsewhere.
-    const auto limit = extractLimitForPushdown(pipeline);
+    const auto limitThenSkip = extractSkipAndLimitForPushdown(pipeline);
 
     auto unavailableMetadata = DocumentSourceMatch::isTextQuery(queryObj)
         ? DepsTracker::kDefaultUnavailableMetadata & ~DepsTracker::kOnlyTextScore
@@ -541,7 +551,7 @@ PipelineD::buildInnerQueryExecutorGeneric(Collection* collection,
                                                 std::move(rewrittenGroupStage),
                                                 unavailableMetadata,
                                                 queryObj,
-                                                limit,
+                                                limitThenSkip,
                                                 aggRequest,
                                                 Pipeline::kAllowedMatcherFeatures,
                                                 &shouldProduceEmptyDocs));
@@ -598,7 +608,7 @@ PipelineD::buildInnerQueryExecutorGeoNear(Collection* collection,
                         nullptr, /* rewrittenGroupStage */
                         DepsTracker::kDefaultUnavailableMetadata & ~DepsTracker::kAllGeoNearData,
                         std::move(fullQuery),
-                        boost::none, /* limit */
+                        LimitThenSkip{boost::none, boost::none},
                         aggRequest,
                         Pipeline::kGeoNearMatcherFeatures,
                         &shouldProduceEmptyDocs));
@@ -633,7 +643,7 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PipelineD::prep
     std::unique_ptr<GroupFromFirstDocumentTransformation> rewrittenGroupStage,
     QueryMetadataBitSet unavailableMetadata,
     const BSONObj& queryObj,
-    boost::optional<long long> limit,
+    LimitThenSkip limitThenSkip,
     const AggregationRequest* aggRequest,
     const MatchExpressionParser::AllowedFeatureSet& matcherFeatures,
     bool* hasNoRequirements) {
@@ -656,12 +666,18 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PipelineD::prep
                       .serialize(SortPattern::SortKeySerialization::kForPipelineSerialization)
                       .toBson();
 
-        // If the $sort has a coalesced $limit, then we push it down as well. Since the $limit was
-        // after a $sort in the pipeline, it should not have been provided by the caller.
-        invariant(!limit);
-        limit = sortStage->getLimit();
-
         pipeline->popFrontWithName(DocumentSourceSort::kStageName);
+
+        // Now that we've pushed down the sort, see if there is a $limit and $skip to push down
+        // also. We should not already have a limit or skip here, otherwise it would be incorrect
+        // for the caller to pass us a sort stage to push down, since the order matters.
+        invariant(!limitThenSkip.limit);
+        invariant(!limitThenSkip.skip);
+        if (sortStage->getLimit()) {
+            // Temporarily add it back to participate in our analysis.
+            pipeline->addInitialSource(DocumentSourceLimit::create(expCtx, *sortStage->getLimit()));
+        }
+        limitThenSkip = extractSkipAndLimitForPushdown(pipeline);
     }
 
     // Perform dependency analysis. In order to minimize the dependency set, we only analyze the
@@ -698,7 +714,7 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PipelineD::prep
                                                       projObj,
                                                       deps.metadataDeps(),
                                                       sortObj,
-                                                      boost::none, /* limit */
+                                                      LimitThenSkip{boost::none, boost::none},
                                                       rewrittenGroupStage->groupId(),
                                                       aggRequest,
                                                       plannerOpts,
@@ -738,7 +754,7 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PipelineD::prep
                                 projObj,
                                 deps.metadataDeps(),
                                 sortObj,
-                                limit,
+                                limitThenSkip,
                                 boost::none, /* groupIdForDistinctScan */
                                 aggRequest,
                                 plannerOpts,

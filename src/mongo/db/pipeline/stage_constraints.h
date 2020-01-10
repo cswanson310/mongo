@@ -306,12 +306,9 @@ struct StageConstraints {
     // $match predicates be swapped before itself.
     bool canSwapWithMatch = false;
 
-    // Neither a $sample nor a $limit can be moved before any stage which will possibly change the
-    // number of documents in the stream. Further, no stage which will change the order of documents
-    // can be swapped with a $limit or $sample, and no stage which will change behavior based on the
-    // order of documents can be swapped with a $sample because our implementation of sample will do
-    // a random sort which shuffles the order.
-    bool canSwapWithLimitAndSample = false;
+    // True if this stage can be safely swapped with a stage which alters the number of documents in
+    // the stream. For example, a $project can be safely swapped with a $skip, $limit, or $sample.
+    bool canSwapWithSkippingOrLimitingStage = false;
 
     // Indicates that a stage is allowed within a pipeline-stlye update.
     bool isAllowedWithinUpdatePipeline = false;

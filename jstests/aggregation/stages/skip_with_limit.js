@@ -47,4 +47,29 @@ assert.eq(count, 2);
 count =
     coll.aggregate([{$match: {x: 4}}, {$skip: 18}, {$group: {_id: '$y'}}, {$limit: 5}]).itcount();
 assert.eq(count, 2);
+
+// Now add some pipelines that have multiple consecutive skips to test that our logic to swap a
+// limit in front of a skip adds the correct total to the limit. For example, in the first test the
+// limit should end up being 23. Here we also throw in some tests with $sort stages, because $sort
+// stages will try to pull limits forward.
+count = coll.aggregate([{$match: {x: 4}}, {$sort: {x: 1}}, {$skip: 10}, {$skip: 8}, {$limit: 5}])
+            .itcount();
+assert.eq(count, 2);
+
+jsTestLog(coll.explain().aggregate(
+    [{$match: {x: 4}}, {$skip: 5}, {$limit: 10}, {$skip: 5}, {$limit: 4}]));
+count =
+    coll.aggregate([{$match: {x: 4}}, {$skip: 5}, {$limit: 10}, {$skip: 5}, {$limit: 4}]).itcount();
+assert.eq(count, 4);
+
+count = coll.aggregate([{$match: {x: 4}}, {$skip: 7}, {$skip: 4}, {$limit: 4}]).itcount();
+assert.eq(count, 4);
+count = coll.aggregate([{$match: {x: 4}}, {$sort: {y: -1}}, {$skip: 7}, {$skip: 4}, {$limit: 4}])
+            .itcount();
+assert.eq(count, 4);
+count = coll.aggregate([{$match: {x: 4}}, {$skip: 7}, {$skip: 10}, {$limit: 4}]).itcount();
+assert.eq(count, 3);
+count = coll.aggregate([{$match: {x: 4}}, {$sort: {y: -1}}, {$skip: 7}, {$skip: 10}, {$limit: 4}])
+            .itcount();
+assert.eq(count, 3);
 }());

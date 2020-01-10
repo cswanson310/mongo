@@ -34,6 +34,7 @@
 #include "mongo/db/pipeline/document_source.h"
 #include "mongo/db/pipeline/document_source_limit.h"
 #include "mongo/db/pipeline/expression.h"
+#include "mongo/db/pipeline/limit_then_skip.h"
 #include "mongo/db/query/query_knobs_gen.h"
 #include "mongo/db/query/sort_pattern.h"
 #include "mongo/db/sorter/sorter.h"
@@ -45,16 +46,18 @@ public:
     static constexpr StringData kStageName = "$sort"_sd;
 
     /**
-     * If there are any $limit stages that could be logically swapped forward to the position of the
-     * pipeline pointed to by 'itr' without changing the meaning of the query, removes these $limit
-     * stages from the Pipeline and returns the resulting limit. A single limit value is computed by
-     * taking the minimum after swapping each individual $limit stage forward.
+     * If there are any $skip and/or $limit stages that could be logically swapped forward to the
+     * position of the pipeline pointed to by 'itr' without changing the meaning of the query,
+     * removes those stages from the Pipeline and returns the resulting skip and limit. The skip
+     * value is the sum of all eligible skip values. A single limit value is computed by taking the
+     * minimum of each $limit stage encountered, factoring in any additional padding to preserve
+     * documents to be skipped.
      *
-     * This method also implements the ability to swap a $limit before a $skip, by adding the value
-     * of the $skip to the value of the $limit.
+     * If 'extractSkips' is set to false, the skips will stay in the pipeline unmodified.
      */
-    static boost::optional<long long> extractLimitForPushdown(
-        Pipeline::SourceContainer::iterator itr, Pipeline::SourceContainer* container);
+    static LimitThenSkip extractSkipAndLimitForPushdown(Pipeline::SourceContainer::iterator itr,
+                                                        Pipeline::SourceContainer* container,
+                                                        bool extractSkips = true);
 
     const char* getSourceName() const final {
         return kStageName.rawData();

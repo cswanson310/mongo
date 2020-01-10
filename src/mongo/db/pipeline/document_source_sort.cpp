@@ -120,9 +120,11 @@ boost::optional<long long> DocumentSourceSort::getLimit() const {
                                      : boost::none;
 }
 
-boost::optional<long long> DocumentSourceSort::extractLimitForPushdown(
-    Pipeline::SourceContainer::iterator itr, Pipeline::SourceContainer* container) {
-    int64_t skipSum = 0;
+LimitThenSkip DocumentSourceSort::extractSkipAndLimitForPushdown(
+    Pipeline::SourceContainer::iterator itr,
+    Pipeline::SourceContainer* container,
+    bool extractSkips) {
+    long long skipSum = 0;
     boost::optional<long long> minLimit;
     while (itr != container->end()) {
         auto nextStage = (*itr).get();
@@ -134,13 +136,16 @@ boost::optional<long long> DocumentSourceSort::extractLimitForPushdown(
         // overflow before applying an optimization to swap the $limit with the $skip.
         if (nextSkip && !overflow::add(skipSum, nextSkip->getSkip(), &safeSum)) {
             skipSum = safeSum;
-            ++itr;
-        } else if (nextLimit && !overflow::add(nextLimit->getLimit(), skipSum, &safeSum)) {
-            if (!minLimit) {
-                minLimit = safeSum;
+            if (extractSkips) {
+                itr = container->erase(itr);
             } else {
-                minLimit = std::min(static_cast<long long>(safeSum), *minLimit);
+                ++itr;
             }
+        } else if (nextLimit && !overflow::add(nextLimit->getLimit(), skipSum, &safeSum)) {
+            // Unlike skipping, limiting is not additive. So simply preserve the minimum. For
+            // example, [{$limit: 10}, {$limit: 5}] is the same as [{$limit: 5}].
+            minLimit = std::min(static_cast<long long>(safeSum),
+                                minLimit.value_or(std::numeric_limits<long long>::max()));
 
             itr = container->erase(itr);
             // If the removed stage wasn't the last in the pipeline, make sure that the stage
@@ -148,14 +153,17 @@ boost::optional<long long> DocumentSourceSort::extractLimitForPushdown(
             if (itr != container->end()) {
                 (*itr)->setSource(itr != container->begin() ? std::prev(itr)->get() : nullptr);
             }
-        } else if (!nextStage->constraints().canSwapWithLimitAndSample) {
+        } else if (!nextStage->constraints().canSwapWithSkippingOrLimitingStage) {
             break;
         } else {
             ++itr;
         }
     }
 
-    return minLimit;
+    if (skipSum > 0) {
+        return {minLimit, skipSum};
+    }
+    return {minLimit, boost::none};
 }
 
 Pipeline::SourceContainer::iterator DocumentSourceSort::doOptimizeAt(
@@ -163,9 +171,9 @@ Pipeline::SourceContainer::iterator DocumentSourceSort::doOptimizeAt(
     invariant(*itr == this);
 
     auto stageItr = std::next(itr);
-    auto limit = extractLimitForPushdown(stageItr, container);
-    if (limit) {
-        _sortExecutor->setLimit(*limit);
+    auto limitThenSkip = extractSkipAndLimitForPushdown(stageItr, container, false);
+    if (limitThenSkip.limit) {
+        _sortExecutor->setLimit(*limitThenSkip.limit);
     }
 
     return std::next(itr);
