@@ -26,6 +26,9 @@
  *    exception statement from all source files in the program, then also delete
  *    it in the license file.
  */
+#define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kQuery
+#include "mongo/util/log.h"
+
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/pipeline/document_source_union_with.h"
@@ -82,10 +85,6 @@ DocumentSourceUnionWith::DocumentSourceUnionWith(
 
     // Copy the ExpressionContext of the base aggregation, using the inner namespace instead.
     _unionExpCtx = expCtx->copyWith(_unionNss);
-
-    // TODO SERVER-XXXX: This can't happen here in a sharded cluster, since it attaches a
-    // non-serializable $cursor stage.
-    _pipeline = pExpCtx->mongoProcessInterface->makePipeline(_rawPipeline, _unionExpCtx);
 }
 
 boost::intrusive_ptr<DocumentSource> DocumentSourceUnionWith::createFromBson(
@@ -127,6 +126,11 @@ DocumentSource::GetNextResult DocumentSourceUnionWith::doGetNext() {
         // Drop down to iterate the sub-pipe
     }
 
+    // This has to happen here and not in create because if the document source is created on
+    // mongos this would add a non-serializable cursor stage. Here it will only happen on mongod.
+    if (!_pipeline) {
+        _pipeline = pExpCtx->mongoProcessInterface->makePipeline(_rawPipeline, _unionExpCtx);
+    }
     if (_pipeline) {
         auto res = _pipeline->getNext();
         if (res)
@@ -149,8 +153,12 @@ void DocumentSourceUnionWith::doDispose() {
 
 void DocumentSourceUnionWith::serializeToArray(
     std::vector<Value>& array, boost::optional<ExplainOptions::Verbosity> explain) const {
-
-    Document doc = DOC("coll" << _unionNss.coll());
+    BSONArrayBuilder bob;
+    for (auto stage : _rawPipeline) {
+        bob.append(stage);
+    }
+    Document doc =
+        DOC(getSourceName() << DOC("coll" << _unionNss.coll() << "pipeline" << bob.arr()));
     array.push_back(Value(doc));
 }
 

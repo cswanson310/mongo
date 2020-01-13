@@ -162,39 +162,24 @@ unique_ptr<Pipeline, PipelineDeleter> MongoInterfaceShardServer::attachCursorSou
     const boost::intrusive_ptr<ExpressionContext>& expCtx, Pipeline* ownedPipeline) {
     std::unique_ptr<Pipeline, PipelineDeleter> pipeline(ownedPipeline,
                                                         PipelineDeleter(expCtx->opCtx));
-
     invariant(pipeline->getSources().empty() ||
               !dynamic_cast<DocumentSourceMergeCursors*>(pipeline->getSources().front().get()));
 
-    // $lookup on a sharded collection is not allowed in a transaction. We assume that if we're in
-    // a transaction, the foreign collection is unsharded. Otherwise, we may access the catalog
-    // cache, and attempt to do a network request while holding locks.
-    // TODO: SERVER-39162 allow $lookup in sharded transactions.
-    const bool inTxn = expCtx->opCtx->inMultiDocumentTransaction();
 
     const bool isSharded = [&]() {
-        if (inTxn || !ShardingState::get(expCtx->opCtx)->enabled()) {
-            // Sharding isn't enabled or we're in a transaction. In either case we assume it's
-            // unsharded.
+        if (!expCtx->mongoProcessInterface->isSharded(expCtx->opCtx, expCtx->ns)) {
             return false;
         } else if (expCtx->ns.db() == "local") {
             // This may be a change stream examining the oplog. We know the oplog (or any local
             // collections for that matter) will never be sharded.
             return false;
         }
-        return uassertStatusOK(getCollectionRoutingInfoForTxnCmd(expCtx->opCtx, expCtx->ns)).cm() !=
-            nullptr;
+        return true;
     }();
 
     if (isSharded) {
-        const bool foreignShardedAllowed =
-            getTestCommandsEnabled() && internalQueryAllowShardedLookup.load();
-        if (foreignShardedAllowed) {
-            // For a sharded collection we may have to establish cursors on a remote host.
-            return sharded_agg_helpers::targetShardsAndAddMergeCursors(expCtx, pipeline.release());
-        }
-
-        uasserted(51069, "Cannot run $lookup with sharded foreign collection");
+        // For a sharded collection we may have to establish cursors on a remote host.
+        return sharded_agg_helpers::targetShardsAndAddMergeCursors(expCtx, pipeline.release());
     }
 
     // Perform a "local read", the same as if we weren't a shard server.

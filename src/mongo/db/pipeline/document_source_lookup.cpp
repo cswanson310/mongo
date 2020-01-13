@@ -41,7 +41,9 @@
 #include "mongo/db/pipeline/document_path_support.h"
 #include "mongo/db/pipeline/expression.h"
 #include "mongo/db/pipeline/expression_context.h"
+#include "mongo/db/pipeline/sharded_agg_helpers.h"
 #include "mongo/db/query/query_knobs_gen.h"
+#include "mongo/db/s/sharding_state.h"
 #include "mongo/platform/overflow_arithmetic.h"
 #include "mongo/util/fail_point.h"
 
@@ -228,6 +230,27 @@ BSONObj buildEqualityOrQuery(const std::string& fieldName, const BSONArray& valu
     return orBuilder.obj();
 }
 
+void assertIsValidCollectionState(const boost::intrusive_ptr<ExpressionContext>& expCtx) {
+    const bool isSharded = [&]() {
+        if (!expCtx->mongoProcessInterface->isSharded(expCtx->opCtx, expCtx->ns)) {
+            return false;
+        } else if (expCtx->ns.db() == "local") {
+            // This may be a change stream examining the oplog. We know the oplog (or any local
+            // collections for that matter) will never be sharded.
+            return false;
+        }
+        return true;
+    }();
+
+    if (isSharded) {
+        const bool foreignShardedAllowed =
+            getTestCommandsEnabled() && internalQueryAllowShardedLookup.load();
+        if (!foreignShardedAllowed) {
+            uasserted(51069, "Cannot run $lookup with sharded foreign collection");
+        }
+    }
+}
+
 }  // namespace
 
 DocumentSource::GetNextResult DocumentSourceLookUp::doGetNext() {
@@ -286,6 +309,7 @@ std::unique_ptr<Pipeline, PipelineDeleter> DocumentSourceLookUp::buildPipeline(
     // Resolve the 'let' variables to values per the given input document.
     resolveLetVariables(inputDoc, &_fromExpCtx->variables);
 
+    assertIsValidCollectionState(_fromExpCtx);
     // If we don't have a cache, build and return the pipeline immediately.
     if (!_cache || _cache->isAbandoned()) {
         return pExpCtx->mongoProcessInterface->makePipeline(_resolvedPipeline, _fromExpCtx);
