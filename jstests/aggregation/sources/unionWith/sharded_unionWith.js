@@ -56,7 +56,7 @@ function runTest(runAgainstDB, aggregation, expectedResult) {
     const resObj = assert.commandWorked(runAgainstDB.runCommand(aggregation));
     const res = resObj.cursor.firstBatch;
     assert(arrayEq(res, expectedResult),
-           "Expected:\n" + tojson(expectedResult) + "Got:\n" + tojson(res))
+           "Expected:\n" + tojson(expectedResult) + "Got:\n" + tojson(res));
 }
 
 function getDocsFromCollection(collObj, proj = null) {
@@ -71,7 +71,7 @@ function getDocsFromCollection(collObj, proj = null) {
 let resSet = getDocsFromCollection(collA).concat(getDocsFromCollection(collB));
 runTest(testDB,
         {aggregate: collA.getName(), pipeline: [{"$unionWith": collB.getName()}], cursor: {}},
-        resSet)
+        resSet);
 // Test a sequential four collection union.
 resSet = getDocsFromCollection(collA).concat(
     getDocsFromCollection(collB), getDocsFromCollection(collC), getDocsFromCollection(collD));
@@ -85,7 +85,7 @@ runTest(testDB,
             ],
             cursor: {}
         },
-        resSet)
+        resSet);
 // Test a nested four collection union.
 // resSet should be the same.
 runTest(testDB,
@@ -102,7 +102,7 @@ runTest(testDB,
             }],
             cursor: {}
         },
-        resSet)
+        resSet);
 // Test that a sub-pipeline is applied to the correct documents.
 resSet = getDocsFromCollection(collA).concat(getDocsFromCollection(collB, {x: 3}));
 runTest(testDB,
@@ -111,7 +111,7 @@ runTest(testDB,
             pipeline: [{"$unionWith": {coll: collB.getName(), pipeline: [{"$addFields": {x: 3}}]}}],
             cursor: {}
         },
-        resSet)
+        resSet);
 // Test that for multiple nested unions sub-pipelines are applied to the correct documents.
 resSet = getDocsFromCollection(collA).concat(getDocsFromCollection(collB, {x: 3}),
                                              getDocsFromCollection(collC, {x: 3, y: 4}),
@@ -143,7 +143,7 @@ runTest(testDB,
             }],
             cursor: {}
         },
-        resSet)
+        resSet);
 resSet = getDocsFromCollection(collA).concat(getDocsFromCollection(collB, {x: 3}),
                                              getDocsFromCollection(collC, {x: 3, y: 4}),
                                              getDocsFromCollection(collD, {x: 3, z: 5}));
@@ -154,33 +154,26 @@ runTest(testDB,
                 "$unionWith": {
                     coll: collB.getName(),
                     pipeline: [
-                        {
-                            "$unionWith": {
-                                coll: collC.getName(),
-                                pipeline: [
-                                    {"$addFields": {y: 4}}
-                                ]
-                            }
-                        },
-                        {
-                            "$unionWith": {
-                                coll: collD.getName(),
-                                pipeline: [{"$addFields": {z: 5}}]
-                            }
-                        },
+                        {"$unionWith": {coll: collC.getName(), pipeline: [{"$addFields": {y: 4}}]}},
+                        {"$unionWith": {coll: collD.getName(), pipeline: [{"$addFields": {z: 5}}]}},
                         {"$addFields": {x: 3}}
                     ]
                 }
             }],
             cursor: {}
         },
-        resSet)
+        resSet);
 // Test with $group.
-resSet = [{_id: 0, sum: 0}, {_id: 1, sum: 3}, {_id: 2, sum: 6}, {_id: 3, sum: 9}, {_id: 4, sum: 12}];
-runTest(testDB,{
-    aggregate: collA.getName(),
-    pipeline: [{"$unionWith": collB.getName()}, {"$group": {_id: "$secondary", sum: {$sum: "$value"}}}],
-    cursor: {}
-}, resSet);
+resSet =
+    [{_id: 0, sum: 0}, {_id: 1, sum: 3}, {_id: 2, sum: 6}, {_id: 3, sum: 9}, {_id: 4, sum: 12}];
+runTest(
+    testDB,
+    {
+        aggregate: collA.getName(),
+        pipeline:
+            [{"$unionWith": collB.getName()}, {"$group": {_id: "$secondary", sum: {$sum: "$val"}}}],
+        cursor: {}
+    },
+    resSet);
 st.stop();
 })();
