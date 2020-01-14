@@ -27,11 +27,11 @@
  *    it in the license file.
  */
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kQuery
-#include "mongo/util/log.h"
 
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/pipeline/document_source_union_with.h"
+#include "mongo/util/log.h"
 
 namespace mongo {
 
@@ -132,6 +132,7 @@ DocumentSource::GetNextResult DocumentSourceUnionWith::doGetNext() {
     // This has to happen here and not in create because if the document source is created on
     // mongos this would add a non-serializable cursor stage. Here it will only happen on mongod.
     if (_executionState == ExecutionProgress::kStartingSubPipeline) {
+        LOG(5) << "$unionWith attaching cursor to pipeline " << Value(_pipeline->serialize());
         _pipeline = pExpCtx->mongoProcessInterface->attachCursorSourceToPipeline(
             _unionExpCtx, _pipeline.release());
         _executionState = ExecutionProgress::kIteratingSubPipeline;

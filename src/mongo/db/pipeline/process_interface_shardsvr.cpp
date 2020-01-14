@@ -169,8 +169,8 @@ unique_ptr<Pipeline, PipelineDeleter> MongoInterfaceShardServer::attachCursorSou
     while (true) {
         auto catalogCache = Grid::get(expCtx->opCtx)->catalogCache();
         // Make a copy of the pipeline in case this targetting attempt blows up.
-        auto pipelineToTarget = [&ownedPipeline, &expCtx]() {
-            const auto serialized = ownedPipeline->serialize();
+        auto pipelineToTarget = [&pipeline, &expCtx]() {
+            const auto serialized = pipeline->serialize();
             std::vector<BSONObj> serializedAsBson;
             serializedAsBson.reserve(serialized.size());
             for (auto&& stage : serialized) {
