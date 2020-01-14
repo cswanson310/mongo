@@ -85,10 +85,6 @@ public:
         return kStageName.rawData();
     }
 
-    void serializeToArray(
-        std::vector<Value>& array,
-        boost::optional<ExplainOptions::Verbosity> explain = boost::none) const final;
-
     GetModPathsReturn getModifiedPaths() const final;
 
     StageConstraints constraints(Pipeline::SplitState) const final {
@@ -135,12 +131,9 @@ private:
         kFinished
     };
 
-    /**
-     * Should not be called; use serializeToArray instead.
-     */
-    Value serialize(boost::optional<ExplainOptions::Verbosity> explain = boost::none) const final {
-        MONGO_UNREACHABLE;
-    }
+    Value serialize(boost::optional<ExplainOptions::Verbosity> explain = boost::none) const final;
+
+    void addViewDefinition(NamespaceString nss, std::vector<BSONObj> viewPipeline);
 
     boost::intrusive_ptr<ExpressionContext> _unionExpCtx;
 

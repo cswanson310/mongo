@@ -31,6 +31,7 @@
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/pipeline/document_source_union_with.h"
+#include "mongo/db/views/resolved_view.h"
 #include "mongo/util/log.h"
 
 namespace mongo {
@@ -79,12 +80,19 @@ DocumentSourceUnionWith::DocumentSourceUnionWith(
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
     NamespaceString unionNss,
     std::vector<BSONObj> pipeline)
-    : DocumentSource(kStageName, expCtx),
-      _unionNss(std::move(unionNss)),
-      _rawPipeline(std::move(pipeline)) {
+    : DocumentSource(kStageName, expCtx), _rawPipeline(std::move(pipeline)) {
 
+    auto resolvedNs = expCtx->getResolvedNamespace(unionNss);
+    addViewDefinition(std::move(resolvedNs.ns), std::move(resolvedNs.pipeline));
+}
+
+void DocumentSourceUnionWith::addViewDefinition(NamespaceString nss,
+                                                std::vector<BSONObj> viewPipeline) {
+
+    _unionNss = std::move(nss);
     // Copy the ExpressionContext of the base aggregation, using the inner namespace instead.
-    _unionExpCtx = expCtx->copyWith(_unionNss);
+    _unionExpCtx = pExpCtx->copyWith(_unionNss);
+    _rawPipeline.insert(_rawPipeline.begin(), viewPipeline.begin(), viewPipeline.end());
     MongoProcessInterface::MakePipelineOptions opts;
     opts.attachCursorSource = false;
     _pipeline = pExpCtx->mongoProcessInterface->makePipeline(_rawPipeline, _unionExpCtx, opts);
@@ -133,9 +141,17 @@ DocumentSource::GetNextResult DocumentSourceUnionWith::doGetNext() {
     // mongos this would add a non-serializable cursor stage. Here it will only happen on mongod.
     if (_executionState == ExecutionProgress::kStartingSubPipeline) {
         LOG(5) << "$unionWith attaching cursor to pipeline " << Value(_pipeline->serialize());
-        _pipeline = pExpCtx->mongoProcessInterface->attachCursorSourceToPipeline(
-            _unionExpCtx, _pipeline.release());
-        _executionState = ExecutionProgress::kIteratingSubPipeline;
+        try {
+            _pipeline = pExpCtx->mongoProcessInterface->attachCursorSourceToPipeline(
+                _unionExpCtx, _pipeline.release());
+            _executionState = ExecutionProgress::kIteratingSubPipeline;
+        } catch (const ExceptionFor<ErrorCodes::CommandOnShardedViewNotSupportedOnMongod>& e) {
+
+            LOG(5) << "$unionWith found view definition. ns: " << e->getNamespace()
+                   << ", pipeline: " << Value(e->getPipeline());
+            addViewDefinition(e->getNamespace(), e->getPipeline());
+            return doGetNext();
+        }
     }
     invariant(_pipeline);
     auto res = _pipeline->getNext();
@@ -157,15 +173,10 @@ void DocumentSourceUnionWith::doDispose() {
     }
 }
 
-void DocumentSourceUnionWith::serializeToArray(
-    std::vector<Value>& array, boost::optional<ExplainOptions::Verbosity> explain) const {
-    BSONArrayBuilder bob;
-    for (auto stage : _rawPipeline) {
-        bob.append(stage);
-    }
-    Document doc =
-        DOC(getSourceName() << DOC("coll" << _unionNss.coll() << "pipeline" << bob.arr()));
-    array.push_back(Value(doc));
+Value DocumentSourceUnionWith::serialize(boost::optional<ExplainOptions::Verbosity> explain) const {
+    auto subPipeline = explain ? _pipeline->writeExplainOps(*explain) : _pipeline->serialize();
+    return Value{Document{
+        {kStageName, Document{{"coll"_sd, _unionNss.coll()}, {"pipeline"_sd, subPipeline}}}}};
 }
 
 DepsTracker::State DocumentSourceUnionWith::getDependencies(DepsTracker* deps) const {
