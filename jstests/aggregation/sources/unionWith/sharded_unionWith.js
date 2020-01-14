@@ -56,7 +56,7 @@ testDB.adminCommand({moveChunk: collD.getFullName(), find: {d: 3}, to: st.shard1
 function runTest(runAgainstDB, aggregation, expectedResult) {
     const resObj = assert.commandWorked(runAgainstDB.runCommand(aggregation));
     const res = resObj.cursor.firstBatch;
-    assert(arrayEq(res, expectedResult),
+    assert(resultsEq(res, expectedResult),
            "Expected:\n" + tojson(expectedResult) + "Got:\n" + tojson(res));
 }
 
@@ -164,36 +164,150 @@ runTest(testDB,
             cursor: {}
         },
         resSet);
-// Test with $group.
-resSet =
-    [{_id: 0, sum: 0}, {_id: 1, sum: 3}, {_id: 2, sum: 6}, {_id: 3, sum: 9}, {_id: 4, sum: 12}];
-runTest(
-    testDB,
-    {
-        aggregate: collA.getName(),
-        pipeline:
-            [{"$unionWith": collB.getName()}, {"$group": {_id: "$secondary", sum: {$sum: "$val"}}}],
-        cursor: {}
-    },
-    resSet);
-
 assert.commandWorked(st.s.getDB("admin").setLogLevel(5, "query"));
 FixtureHelpers.runCommandOnEachPrimary({
     db: collA.getDB().getSiblingDB("admin"),
     cmdObj: {setParameter: 1, logComponentVerbosity: {query: 5}}
 });
+
+resSet = [
+    {_id: 0, sum: 0},
+    {_id: 1, sum: 2},
+    {_id: 2, sum: 4},
+    {_id: 3, sum: 6},
+    {_id: 4, sum: 8},
+];
 runTest(testDB,
         {
             aggregate: collA.getName(),
             pipeline: [
                 {$group: {_id: "$_id"}},
-                {"$unionWith": collB.getName()},
-                {"$group": {_id: "$secondary", sum: {$sum: "$val"}}},
+                {
+                    "$unionWith": {
+                        coll: collB.getName(),
+                        pipeline: [
+                            {$group: {_id: "$secondary", sum: {$sum: "$val"}}},
+                        ]
+                    }
+                },
                 {$match: {sum: {$exists: true}}}
             ],
             cursor: {},
             allowDiskUse: true,
         },
         resSet);
+resSet = [
+    {_id: 0, sum: 0},
+    {_id: 1, sum: 2},
+    {_id: 2, sum: 4},
+    {_id: 3, sum: 6},
+    {_id: 4, sum: 8},
+    {a: 0, val: 0, secondary: 0},
+    {a: 1, val: 1, secondary: 1},
+    {a: 2, val: 2, secondary: 2},
+    {a: 3, val: 3, secondary: 3},
+    {a: 4, val: 4, secondary: 4},
+];
+runTest(testDB,
+        {
+            aggregate: collA.getName(),
+            pipeline: [
+                {$project: {_id: 0}},
+                {
+                    "$unionWith": {
+                        coll: collB.getName(),
+                        pipeline: [{$group: {_id: "$secondary", sum: {$sum: "$val"}}}]
+                    }
+                }
+            ],
+            cursor: {}
+        },
+        resSet);
+assert.commandWorked(testDB.runCommand({create: "viewB", viewOn: collB.getName(), pipeline: []}));
+runTest(
+    testDB,
+    {
+        aggregate: collA.getName(),
+        pipeline: [
+            {$project: {_id: 0}},
+            {
+                "$unionWith":
+                    {coll: "viewB", pipeline: [{$group: {_id: "$secondary", sum: {$sum: "$val"}}}]}
+            }
+        ],
+        cursor: {}
+    },
+    resSet);
+assert.commandWorked(testDB.runCommand({
+    create: "viewBWithPipeline",
+    viewOn: collB.getName(),
+    pipeline: [{$match: {secondary: {$mod: [2, 0]}}}]
+}));
+resSet = [
+    {_id: 0, sum: 0},
+    {_id: 2, sum: 4},
+    {_id: 4, sum: 8},
+    {a: 0, val: 0, secondary: 0},
+    {a: 1, val: 1, secondary: 1},
+    {a: 2, val: 2, secondary: 2},
+    {a: 3, val: 3, secondary: 3},
+    {a: 4, val: 4, secondary: 4},
+];
+runTest(testDB,
+        {
+            aggregate: collA.getName(),
+            pipeline: [
+                {$project: {_id: 0}},
+                {
+                    "$unionWith": {
+                        coll: "viewBWithPipeline",
+                        pipeline: [{$group: {_id: "$secondary", sum: {$sum: "$val"}}}]
+                    }
+                }
+            ],
+            cursor: {}
+        },
+        resSet);
+assert.commandWorked(testDB.runCommand({
+    create: "viewCompoundWithPipeline",
+    viewOn: "viewBWithPipeline",
+    pipeline: [{$addFields: {generatedFromView: true}}]
+}));
+assert.eq(testDB["viewCompoundWithPipeline"]
+              .find({}, {_id: 0})
+              .sort({b: 1, generatedFromView: -1})
+              .toArray(),
+          [
+              {b: 0, val: 0, secondary: 0, generatedFromView: true},
+              {b: 2, val: 4, secondary: 2, generatedFromView: true},
+              {b: 4, val: 8, secondary: 4, generatedFromView: true},
+          ]);
+resSet = [
+    {b: 0, val: 0, secondary: 0},
+    {b: 1, val: 2, secondary: 1},
+    {b: 2, val: 4, secondary: 2},
+    {b: 3, val: 6, secondary: 3},
+    {b: 4, val: 8, secondary: 4},
+    {b: 0, val: 0, secondary: 0},
+    {b: 1, val: 2, secondary: 1},
+    {b: 2, val: 4, secondary: 2},
+    {b: 3, val: 6, secondary: 3},
+    {b: 4, val: 8, secondary: 4},
+    {b: 0, val: 0, secondary: 0, generatedFromView: true},
+    {b: 2, val: 4, secondary: 2, generatedFromView: true},
+    {b: 4, val: 8, secondary: 4, generatedFromView: true},
+];
+runTest(
+    testDB,
+    {
+        aggregate: collB.getName(),
+        pipeline: [
+            {"$unionWith": {coll: "viewCompoundWithPipeline", pipeline: [{$unionWith: "viewB"}]}},
+            {$project: {_id: 0}}
+        ],
+        cursor: {}
+    },
+    resSet);
+
 st.stop();
 })();

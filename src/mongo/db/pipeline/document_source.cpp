@@ -71,7 +71,9 @@ void DocumentSource::registerParser(string name, Parser parser) {
 list<intrusive_ptr<DocumentSource>> DocumentSource::parse(
     const intrusive_ptr<ExpressionContext>& expCtx, BSONObj stageObj) {
     uassert(16435,
-            "A pipeline stage specification object must contain exactly one field.",
+            str::stream() << "A pipeline stage specification object must contain exactly one "
+                             "field, found multiple: "
+                          << stageObj,
             stageObj.nFields() == 1);
     BSONElement stageSpec = stageObj.firstElement();
     auto stageName = stageSpec.fieldNameStringData();
