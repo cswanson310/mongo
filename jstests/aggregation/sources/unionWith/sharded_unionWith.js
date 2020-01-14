@@ -6,6 +6,7 @@
 (function() {
 "use strict";
 load("jstests/aggregation/extras/utils.js");  // arrayEq
+load("jstests/libs/fixture_helpers.js");      // FixtureHelpers
 const st = new ShardingTest({name: jsTestName(), shards: 2, mongos: 1, config: 1});
 
 const testDB = st.s.getDB(jsTestName());
@@ -175,5 +176,24 @@ runTest(
         cursor: {}
     },
     resSet);
+
+assert.commandWorked(st.s.getDB("admin").setLogLevel(5, "query"));
+FixtureHelpers.runCommandOnEachPrimary({
+    db: collA.getDB().getSiblingDB("admin"),
+    cmdObj: {setParameter: 1, logComponentVerbosity: {query: 5}}
+});
+runTest(testDB,
+        {
+            aggregate: collA.getName(),
+            pipeline: [
+                {$group: {_id: "$_id"}},
+                {"$unionWith": collB.getName()},
+                {"$group": {_id: "$secondary", sum: {$sum: "$val"}}},
+                {$match: {sum: {$exists: true}}}
+            ],
+            cursor: {},
+            allowDiskUse: true,
+        },
+        resSet);
 st.stop();
 })();
