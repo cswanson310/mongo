@@ -48,7 +48,9 @@ void LiteParsedDocumentSource::registerParser(const std::string& name, Parser pa
 std::unique_ptr<LiteParsedDocumentSource> LiteParsedDocumentSource::parse(
     const AggregationRequest& request, const BSONObj& spec) {
     uassert(40323,
-            "A pipeline stage specification object must contain exactly one field.",
+            str::stream() << "A pipeline stage specification object must contain exactly one "
+                             "field, found multiple: "
+                          << spec,
             spec.nFields() == 1);
     BSONElement specElem = spec.firstElement();
 
