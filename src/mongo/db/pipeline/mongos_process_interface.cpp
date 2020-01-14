@@ -27,6 +27,8 @@
  *    it in the license file.
  */
 
+#define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kQuery
+
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/pipeline/mongos_process_interface.h"
@@ -50,6 +52,7 @@
 #include "mongo/s/query/router_exec_stage.h"
 #include "mongo/s/transaction_router.h"
 #include "mongo/util/fail_point.h"
+#include "mongo/util/log.h"
 
 namespace mongo {
 
@@ -140,7 +143,48 @@ std::unique_ptr<Pipeline, PipelineDeleter> MongoSInterface::makePipeline(
 
 std::unique_ptr<Pipeline, PipelineDeleter> MongoSInterface::attachCursorSourceToPipeline(
     const boost::intrusive_ptr<ExpressionContext>& expCtx, Pipeline* ownedPipeline) {
-    return sharded_agg_helpers::targetShardsAndAddMergeCursors(expCtx, ownedPipeline);
+    size_t numAttempts = 0;
+    while (true) {
+        // Make a copy of the pipeline in case this targetting attempt blows up.
+        auto pipelineToTarget = [ownedPipeline, &expCtx]() {
+            const auto serialized = ownedPipeline->serialize();
+            std::vector<BSONObj> serializedAsBson;
+            serializedAsBson.reserve(serialized.size());
+            for (auto&& stage : serialized) {
+                invariant(stage.getType() == BSONType::Object);
+                serializedAsBson.push_back(stage.getDocument().toBson());
+            }
+            return uassertStatusOKWithContext(Pipeline::parse(serializedAsBson, expCtx),
+                                              "Failed to copy the pipeline for targetting");
+        }();
+        auto catalogCache = Grid::get(expCtx->opCtx)->catalogCache();
+
+        try {
+            // Dispatch the request.
+            return sharded_agg_helpers::targetShardsAndAddMergeCursors(expCtx,
+                                                                       pipelineToTarget.release());
+        } catch (ExceptionForCat<ErrorCategory::StaleShardVersionError>& e) {
+            if (auto staleInfo = e.extraInfo<StaleConfigInfo>()) {
+                catalogCache->invalidateShardOrEntireCollectionEntryForShardedCollection(
+                    expCtx->opCtx,
+                    expCtx->ns,
+                    staleInfo->getVersionWanted(),
+                    staleInfo->getVersionReceived(),
+                    staleInfo->getShardId());
+            } else {
+                catalogCache->onEpochChange(expCtx->ns);
+            }
+
+            if (++numAttempts > kMaxNumStaleVersionRetries) {
+                e.addContext(str::stream()
+                             << "Exceeded maximum number of " << kMaxNumStaleVersionRetries
+                             << " retries attempting to target pipeline");
+                throw;
+            }
+            LOG(5) << "Retrying pipeline targetting. Got error: " << e.toString();
+            continue;  // Try again if allowed.
+        }
+    }
 }
 
 boost::optional<Document> MongoSInterface::lookupSingleDocument(

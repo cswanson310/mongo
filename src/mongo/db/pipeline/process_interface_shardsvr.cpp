@@ -165,30 +165,69 @@ unique_ptr<Pipeline, PipelineDeleter> MongoInterfaceShardServer::attachCursorSou
     invariant(pipeline->getSources().empty() ||
               !dynamic_cast<DocumentSourceMergeCursors*>(pipeline->getSources().front().get()));
 
+    size_t numAttempts = 0;
+    while (true) {
+        auto catalogCache = Grid::get(expCtx->opCtx)->catalogCache();
+        // Make a copy of the pipeline in case this targetting attempt blows up.
+        auto pipelineToTarget = [&ownedPipeline, &expCtx]() {
+            const auto serialized = ownedPipeline->serialize();
+            std::vector<BSONObj> serializedAsBson;
+            serializedAsBson.reserve(serialized.size());
+            for (auto&& stage : serialized) {
+                invariant(stage.getType() == BSONType::Object);
+                serializedAsBson.push_back(stage.getDocument().toBson());
+            }
+            return uassertStatusOKWithContext(Pipeline::parse(serializedAsBson, expCtx),
+                                              "Failed to copy the pipeline for targetting");
+        }();
 
-    const bool isSharded = [&]() {
-        if (!expCtx->mongoProcessInterface->isSharded(expCtx->opCtx, expCtx->ns)) {
-            return false;
-        } else if (expCtx->ns.db() == "local") {
-            // This may be a change stream examining the oplog. We know the oplog (or any local
-            // collections for that matter) will never be sharded.
-            return false;
+        // TODO: This looks like 'isSharded' is using CollectionShardingState.
+        const bool isSharded = [&]() {
+            if (!expCtx->mongoProcessInterface->isSharded(expCtx->opCtx, expCtx->ns)) {
+                return false;
+            } else if (expCtx->ns.db() == "local") {
+                // This may be a change stream examining the oplog. We know the oplog (or any local
+                // collections for that matter) will never be sharded.
+                return false;
+            }
+            return true;
+        }();
+
+        try {
+            // Dispatch the request.
+            if (isSharded) {
+                // For a sharded collection we may have to establish cursors on a remote host.
+                return sharded_agg_helpers::targetShardsAndAddMergeCursors(
+                    expCtx, pipelineToTarget.release());
+            }
+            // Perform a "local read", the same as if we weren't a shard server.
+
+            // TODO SERVER-39015 we should do a shard version check here after we acquire a lock
+            // within this function, to be sure the collection didn't become sharded between the
+            // time we checked whether it's sharded and the time we took the lock.
+
+            return attachCursorSourceToPipelineForLocalRead(expCtx, pipelineToTarget.release());
+        } catch (ExceptionForCat<ErrorCategory::StaleShardVersionError>& e) {
+            if (auto staleInfo = e.extraInfo<StaleConfigInfo>()) {
+                catalogCache->invalidateShardOrEntireCollectionEntryForShardedCollection(
+                    expCtx->opCtx,
+                    expCtx->ns,
+                    staleInfo->getVersionWanted(),
+                    staleInfo->getVersionReceived(),
+                    staleInfo->getShardId());
+            } else {
+                catalogCache->onEpochChange(expCtx->ns);
+            }
+            if (++numAttempts <= kMaxNumStaleVersionRetries) {
+                LOG(5) << "Retrying pipeline targetting. Got error: " << e.toString();
+                continue;  // Try again if allowed.
+            }
+            e.addContext(str::stream()
+                         << "Exceeded maximum number of " << kMaxNumStaleVersionRetries
+                         << " retries attempting to target pipeline");
+            throw;
         }
-        return true;
-    }();
-
-    if (isSharded) {
-        // For a sharded collection we may have to establish cursors on a remote host.
-        return sharded_agg_helpers::targetShardsAndAddMergeCursors(expCtx, pipeline.release());
     }
-
-    // Perform a "local read", the same as if we weren't a shard server.
-
-    // TODO SERVER-39015 we should do a shard version check here after we acquire a lock within
-    // this function, to be sure the collection didn't become sharded between the time we checked
-    // whether it's sharded and the time we took the lock.
-
-    return attachCursorSourceToPipelineForLocalRead(expCtx, pipeline.release());
 }
 
 std::unique_ptr<ShardFilterer> MongoInterfaceShardServer::getShardFilterer(

@@ -119,6 +119,22 @@ protected:
     void doDispose() final;
 
 private:
+    enum ExecutionProgress {
+        // We haven't yet iterated 'pSource' to completion.
+        kIteratingSource,
+
+        // We finished iterating 'pSource', but haven't started on the sub pipeline and need to do
+        // some setup first.
+        kStartingSubPipeline,
+
+        // We finished iterating 'pSource' and are now iterating '_pipeline', but haven't finished
+        // yet.
+        kIteratingSubPipeline,
+
+        // There are no more results.
+        kFinished
+    };
+
     /**
      * Should not be called; use serializeToArray instead.
      */
@@ -132,7 +148,7 @@ private:
 
     std::unique_ptr<Pipeline, PipelineDeleter> _pipeline;
     std::vector<BSONObj> _rawPipeline;
-    bool _sourceExhausted = false;
+    ExecutionProgress _executionState = ExecutionProgress::kIteratingSource;
 };
 
 }  // namespace mongo

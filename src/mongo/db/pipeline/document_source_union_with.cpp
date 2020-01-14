@@ -85,6 +85,9 @@ DocumentSourceUnionWith::DocumentSourceUnionWith(
 
     // Copy the ExpressionContext of the base aggregation, using the inner namespace instead.
     _unionExpCtx = expCtx->copyWith(_unionNss);
+    MongoProcessInterface::MakePipelineOptions opts;
+    opts.attachCursorSource = false;
+    _pipeline = pExpCtx->mongoProcessInterface->makePipeline(_rawPipeline, _unionExpCtx, opts);
 }
 
 boost::intrusive_ptr<DocumentSource> DocumentSourceUnionWith::createFromBson(
@@ -117,26 +120,28 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceUnionWith::createFromBson(
 }
 
 DocumentSource::GetNextResult DocumentSourceUnionWith::doGetNext() {
-    if (!_sourceExhausted) {
+    if (_executionState == ExecutionProgress::kIteratingSource) {
         auto nextInput = pSource->getNext();
         if (!nextInput.isEOF()) {
             return nextInput;
         }
-        _sourceExhausted = true;
+        _executionState = ExecutionProgress::kStartingSubPipeline;
         // Drop down to iterate the sub-pipe
     }
 
     // This has to happen here and not in create because if the document source is created on
     // mongos this would add a non-serializable cursor stage. Here it will only happen on mongod.
-    if (!_pipeline) {
-        _pipeline = pExpCtx->mongoProcessInterface->makePipeline(_rawPipeline, _unionExpCtx);
+    if (_executionState == ExecutionProgress::kStartingSubPipeline) {
+        _pipeline = pExpCtx->mongoProcessInterface->attachCursorSourceToPipeline(
+            _unionExpCtx, _pipeline.release());
+        _executionState = ExecutionProgress::kIteratingSubPipeline;
     }
-    if (_pipeline) {
-        auto res = _pipeline->getNext();
-        if (res)
-            return std::move(*res);
-    }
+    invariant(_pipeline);
+    auto res = _pipeline->getNext();
+    if (res)
+        return std::move(*res);
 
+    _executionState = ExecutionProgress::kFinished;
     return GetNextResult::makeEOF();
 }
 
