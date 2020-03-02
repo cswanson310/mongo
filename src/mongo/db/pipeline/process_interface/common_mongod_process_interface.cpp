@@ -613,7 +613,8 @@ Update CommonMongodProcessInterface::buildUpdateOp(
         wcb.setBypassDocumentValidation(expCtx->bypassDocumentValidation);
         return wcb;
     }());
-    updateOp.setLet(expCtx->variables.serializeLetParameters(expCtx->variablesParseState));
+    updateOp.setRuntimeConstants(
+        expCtx->variables.serializeLetParameters(expCtx->variablesParseState));
     return updateOp;
 }
 

@@ -499,6 +499,7 @@ BatchedCommandRequest BatchWriteOp::buildBatchRequest(
                     write_ops::Update updateOp(_clientRequest.getNS());
                     updateOp.setUpdates(std::move(*updates));
                     updateOp.setLet(_clientRequest.getLet());
+                    updateOp.setRuntimeConstants(_clientRequest.getRuntimeConstants());
                     return updateOp;
                 }());
             }
