@@ -112,6 +112,36 @@ void Variables::uassertValidNameForUserRead(StringData varName) {
     }
 }
 
+static const std::initializer_list<std::pair<StringData, std::function<void(const Value&)>>>
+    kSystemVars = {{"NOW"_sd,
+                    [](const auto& value) {
+                        uassert(ErrorCodes::TypeMismatch,
+                                str::stream() << "$$NOW must have a date value, found "
+                                              << typeName(value.getType()),
+                                value.getType() == BSONType::Date);
+                    }},
+                   {"CLUSTER_TIME"_sd,
+                    [](const auto& value) {
+                        uassert(ErrorCodes::TypeMismatch,
+                                str::stream()
+                                    << "$$CLUSTER_TIME must have a timestamp value, found "
+                                    << typeName(value.getType()),
+                                value.getType() == BSONType::bsonTimestamp);
+                    }},
+                   {"JS_SCOPE"_sd,
+                    [](const auto& value) {
+                        uassert(ErrorCodes::TypeMismatch,
+                                str::stream() << "$$JS_SCOPE must have an object value, found "
+                                              << typeName(value.getType()),
+                                value.getType() == BSONType::Object);
+                    }},
+                   {"IS_MR"_sd, [](const auto& value) {
+                        uassert(ErrorCodes::TypeMismatch,
+                                str::stream() << "$$IS_MR must have a bool value, found "
+                                              << typeName(value.getType()),
+                                value.getType() == BSONType::Bool);
+                    }}};
+
 void Variables::seedVariablesWithLetParameters(boost::intrusive_ptr<ExpressionContext> expCtx,
                                                const BSONObj letParameters) {
     for (auto&& elem : letParameters) {
@@ -121,21 +151,21 @@ void Variables::seedVariablesWithLetParameters(boost::intrusive_ptr<ExpressionCo
                 "Command let Expression does not evaluate to constant "s + elem.toString(),
                 ExpressionConstant::isNullOrConstant(foldedExpr));
         auto value = static_cast<ExpressionConstant&>(*foldedExpr).getValue();
-        const auto sysVar = [&] {
+        const auto sysVarName = [&]() -> boost::optional<StringData> {
             // ROOT and REMOVE are excluded since they're not constants.
-            for (auto&& builtin : {"NOW"_sd, "CLUSTER_TIME"_sd, "JS_SCOPE"_sd, "IS_MR"_sd})
-                if (builtin == elem.fieldName())
-                    return builtin;
-            return ""_sd;
+            for (auto&& [name, validator] : kSystemVars)
+                if (name == elem.fieldNameStringData()) {
+                    validator(value);
+                    return name;
+                }
+            return boost::none;
         }();
 
-        if (!sysVar.empty()) {
-            uassert(ErrorCodes::TypeMismatch,
-                    str::stream() << "JS_SCOPE must be an object, found "
-                                  << typeName(value.getType()),
-                    !(elem.fieldNameStringData() == "JS_SCOPE"_sd &&
-                      value.getType() != BSONType::Object));
-            _systemVars[kBuiltinVarNameToId.at(sysVar)] = value;
+        if (sysVarName) {
+            if (!(sysVarName == "CLUSTER_TIME"_sd && value.getTimestamp().isNull())) {
+                // Avoid populating a value for CLUSTER_TIME if the value is null.
+                _systemVars[kBuiltinVarNameToId.at(*sysVarName)] = value;
+            }
         } else {
             setConstantValue(expCtx->variablesParseState.defineVariable(elem.fieldName()), value);
         }
