@@ -120,6 +120,7 @@ void Variables::seedVariablesWithLetParameters(boost::intrusive_ptr<ExpressionCo
         uassert(31474,
                 "Command let Expression does not evaluate to constant "s + elem.toString(),
                 ExpressionConstant::isNullOrConstant(foldedExpr));
+        auto value = static_cast<ExpressionConstant&>(*foldedExpr).getValue();
         const auto sysVar = [&] {
             // ROOT and REMOVE are excluded since they're not constants.
             for (auto&& builtin : {"NOW"_sd, "CLUSTER_TIME"_sd, "JS_SCOPE"_sd, "IS_MR"_sd})
@@ -128,12 +129,16 @@ void Variables::seedVariablesWithLetParameters(boost::intrusive_ptr<ExpressionCo
             return ""_sd;
         }();
 
-        if (!sysVar.empty())
-            _systemVars[kBuiltinVarNameToId.at(sysVar)] =
-                static_cast<ExpressionConstant&>(*foldedExpr).getValue();
-        else
-            setConstantValue(expCtx->variablesParseState.defineVariable(elem.fieldName()),
-                             static_cast<ExpressionConstant&>(*foldedExpr).getValue());
+        if (!sysVar.empty()) {
+            uassert(ErrorCodes::TypeMismatch,
+                    str::stream() << "JS_SCOPE must be an object, found "
+                                  << typeName(value.getType()),
+                    !(elem.fieldNameStringData() == "JS_SCOPE"_sd &&
+                      value.getType() != BSONType::Object));
+            _systemVars[kBuiltinVarNameToId.at(sysVar)] = value;
+        } else {
+            setConstantValue(expCtx->variablesParseState.defineVariable(elem.fieldName()), value);
+        }
     }
 }
 
@@ -251,6 +256,15 @@ Variables::Id VariablesParseState::getVariable(StringData name) const {
     return Variables::kRootId;
 }
 
+BSONObj VariablesParseState::serialize(const Variables& vars) const {
+    auto bob = BSONObjBuilder{};
+    for (auto&& [var_name, id] : _variables) {
+        if (vars.hasValue(id)) {
+            bob << var_name << vars.getValue(id);
+        }
+    }
+    return bob.obj();
+}
 std::set<Variables::Id> VariablesParseState::getDefinedVariableIDs() const {
     std::set<Variables::Id> ids;
 

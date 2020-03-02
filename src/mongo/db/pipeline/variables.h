@@ -93,7 +93,7 @@ public:
         Variables::Id _nextId;
     };
 
-    Variables() = default;
+    Variables() : _systemVars{{kIsMapReduceId, Value(false)}, {kJsScopeId, Value(Document{})}} {}
 
     static void uassertValidNameForUserWrite(StringData varName);
     static void uassertValidNameForUserRead(StringData varName);
@@ -126,6 +126,10 @@ public:
      * defined above.
      */
     void setValue(Variables::Id id, const Value& value);
+
+    bool hasValue(Variables::Id id) const {
+        return id < 0 || static_cast<size_t>(id) < _userVariableValues.size();
+    }
 
     /**
      * Same as 'setValue' but marks 'value' as being constant. It is illegal to change a value that
@@ -241,12 +245,7 @@ public:
      */
     std::set<Variables::Id> getDefinedVariableIDs() const;
 
-    auto serialize(const Variables& vars) const {
-        auto bob = BSONObjBuilder{};
-        for (auto&& [var_name, id] : _variables)
-            bob << var_name << vars.getValue(id);
-        return bob.obj();
-    }
+    BSONObj serialize(const Variables& vars) const;
 
     /**
      * Return a copy of this VariablesParseState. Will replace the copy's '_idGenerator' pointer

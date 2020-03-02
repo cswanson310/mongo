@@ -20,7 +20,7 @@ const weights = {
 let constants = {
     localNow: new Date(),
     clusterTime: new Timestamp(0, 0),
-    jsScope: {weights: weights}
+    JS_SCOPE: {weights: weights}
 };
 
 function fmap() {
@@ -47,7 +47,7 @@ let pipeline = [
 
 assert.commandWorked(coll.insert({text: 'wood chuck could chuck wood'}));
 
-let results = coll.aggregate(pipeline, {cursor: {}, runtimeConstants: constants}).toArray();
+let results = coll.aggregate(pipeline, {cursor: {}, let : constants}).toArray();
 assert(resultsEq(results,
                  [
                      {k: "wood", v: weights["wood"]},
@@ -68,7 +68,7 @@ pipeline[0].$project.emits.$_internalJsEmit.eval = function() {
     }
 };
 
-results = coll.aggregate(pipeline, {cursor: {}, runtimeConstants: constants}).toArray();
+results = coll.aggregate(pipeline, {cursor: {}, let : constants}).toArray();
 assert(resultsEq(results,
                  [
                      {k: "wood", v: weights["wood"]},
@@ -82,13 +82,13 @@ assert(resultsEq(results,
 //
 // Test that the jsScope is allowed to have any number of fields.
 //
-constants.jsScope.multiplier = 5;
+constants.JS_SCOPE.multiplier = 5;
 pipeline[0].$project.emits.$_internalJsEmit.eval = function() {
     for (let word of this.text.split(' ')) {
         emit(word, weights[word] * multiplier);
     }
 };
-results = coll.aggregate(pipeline, {cursor: {}, runtimeConstants: constants}).toArray();
+results = coll.aggregate(pipeline, {cursor: {}, let : constants}).toArray();
 assert(resultsEq(results,
                  [
                      {k: "wood", v: weights["wood"] * 5},
@@ -98,13 +98,13 @@ assert(resultsEq(results,
                      {k: "wood", v: weights["wood"] * 5}
                  ],
                  results));
-constants.jsScope = {};
+constants.JS_SCOPE = {};
 pipeline[0].$project.emits.$_internalJsEmit.eval = function() {
     for (let word of this.text.split(' ')) {
         emit(word, 1);
     }
 };
-results = coll.aggregate(pipeline, {cursor: {}, runtimeConstants: constants}).toArray();
+results = coll.aggregate(pipeline, {cursor: {}, let : constants}).toArray();
 assert(resultsEq(results,
                  [
                      {k: "wood", v: 1},
@@ -116,11 +116,10 @@ assert(resultsEq(results,
                  results));
 
 //
-// Test that the command fails if the jsScope is not an object.
+// Test that the command fails if the JS_SCOPE is not an object.
 //
-constants.jsScope = "you cant do this";
+constants.JS_SCOPE = "you cant do this";
 assert.commandFailedWithCode(
-    db.runCommand(
-        {aggregate: coll.getName(), pipeline: pipeline, cursor: {}, runtimeConstants: constants}),
+    db.runCommand({aggregate: coll.getName(), pipeline: pipeline, cursor: {}, let : constants}),
     ErrorCodes.TypeMismatch);
 })();

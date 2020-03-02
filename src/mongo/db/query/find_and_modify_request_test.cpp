@@ -253,8 +253,8 @@ TEST(FindAndModifyRequest, UpdateWithLetParams) {
             query: { x: 1 },
             update: { y: 1 },
             let: {
-                localNow: new Date(0),
-                clusterTime: Timestamp(1, 0)
+                NOW: new Date(0),
+                CLUSTER_TIME: Timestamp(1, 0)
             }
         })json"));
 
@@ -295,8 +295,8 @@ TEST(FindAndModifyRequest, UpdateWithFullSpec) {
             collation: { locale: 'en_US' },
             arrayFilters: [ { i: 0 } ],
             let: {
-                localNow: new Date(0),
-                clusterTime: Timestamp(1, 0)
+                NOW: new Date(0),
+                CLUSTER_TIME: Timestamp(1, 0)
             },
             new: true,
             writeConcern: { w: 2, fsync: true, wtimeout: 150 },
@@ -411,8 +411,8 @@ TEST(FindAndModifyRequest, RemoveWithFullSpec) {
             sort: { z: -1 },
             collation: { locale: 'en_US' },
             let: {
-                localNow: new Date(0),
-                clusterTime: Timestamp(1, 0)
+                NOW: new Date(0),
+                CLUSTER_TIME: Timestamp(1, 0)
             },
             writeConcern: { w: 2, fsync: true, wtimeout: 150 }
         })json"));

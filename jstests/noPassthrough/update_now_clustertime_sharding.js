@@ -49,7 +49,13 @@ assert.commandWorked(bulk.execute());
 assert.commandFailedWithCode(db.runCommand({
     update: coll.getName(),
     updates: [{q: {}, u: {$set: {operationFailsBeforeApplyingUpdates: true}}}],
-    runtimeConstants: {localNow: new Date(), clusterTime: new Timestamp(0, 0)}
+    runtimeConstants: {NOW: new Date(), CLUSTER_TIME: new Timestamp(0, 0)}
+}),
+                             51195);
+assert.commandFailedWithCode(db.runCommand({
+    update: coll.getName(),
+    updates: [{q: {}, u: {$set: {operationFailsBeforeApplyingUpdates: true}}}],
+    let : {NOW: new Date(), CLUSTER_TIME: new Timestamp(0, 0)}
 }),
                              51195);
 
