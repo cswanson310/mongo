@@ -33,7 +33,6 @@ global:
 
 imports:
     - "mongo/db/logical_session_id.idl"
-    - "mongo/db/pipeline/runtime_constants.idl"
     - "mongo/idl/basic_types.idl"
     - "mongo/db/query/hint.idl"
 
@@ -184,10 +183,14 @@ commands:
                 description: "An array of one or more update statements to perform."
                 type: array<UpdateOpEntry>
                 supports_doc_sequence: true
+            let:
+                description: "A set of constants. These are used by pipeline-style update operations
+                               and $expr."
+                type: object
+                optional: true
             runtimeConstants:
-                description: "A collection of values that do not change once computed. These are
-                              used by pipeline-style update operations."
-                type: RuntimeConstants
+                description: "Depreciated alias for let"
+                type: object
                 optional: true
 
     delete:

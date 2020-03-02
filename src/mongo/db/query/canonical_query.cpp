@@ -153,7 +153,7 @@ StatusWith<std::unique_ptr<CanonicalQuery>> CanonicalQuery::canonicalize(
     boost::intrusive_ptr<ExpressionContext> newExpCtx;
     if (!expCtx.get()) {
         newExpCtx = make_intrusive<ExpressionContext>(
-            opCtx, std::move(collator), qr->nss(), qr->getRuntimeConstants());
+            opCtx, std::move(collator), qr->nss(), qr->letParameters);
     } else {
         newExpCtx = expCtx;
         invariant(CollatorInterface::collatorsMatch(collator.get(), expCtx->getCollator()));

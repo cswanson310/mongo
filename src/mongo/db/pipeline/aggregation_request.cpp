@@ -36,6 +36,7 @@
 #include "mongo/base/error_codes.h"
 #include "mongo/base/status_with.h"
 #include "mongo/base/string_data.h"
+#include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/db/catalog/document_validation.h"
 #include "mongo/db/command_generic_argument.h"
 #include "mongo/db/commands.h"
@@ -188,13 +189,16 @@ StatusWith<AggregationRequest> AggregationRequest::parseFromBSON(
 
             auto writeConcern = uassertStatusOK(WriteConcernOptions::parse(elem.embeddedObject()));
             request.setWriteConcern(writeConcern);
-        } else if (kRuntimeConstants == fieldName) {
-            try {
-                IDLParserErrorContext ctx("internalRuntimeConstants");
-                request.setRuntimeConstants(RuntimeConstants::parse(ctx, elem.Obj()));
-            } catch (const DBException& ex) {
-                return ex.toStatus();
-            }
+        } else if (kRuntimeConstants == fieldName || kLet == fieldName) {
+            // TODO SERVER-46384: Remove 'runtimeConstants' in 4.5 since it is redundant with 'let'
+            // and no longer sent to shards.
+            if (elem.type() != BSONType::Object)
+                return {ErrorCodes::TypeMismatch,
+                        str::stream()
+                            << fieldName << " must be an object, not a " << typeName(elem.type())};
+            auto bob = BSONObjBuilder{request.letParameters};
+            bob.appendElementsUnique(elem.embeddedObject());
+            request.letParameters = bob.obj();
         } else if (fieldName == "mergeByPBRT"_sd) {
             // TODO SERVER-41900: we must retain the ability to ingest the 'mergeByPBRT' field for
             // 4.4 upgrade purposes, since a 4.2 mongoS will always send {mergeByPBRT:true} to the
@@ -325,8 +329,7 @@ Document AggregationRequest::serializeToCommandObj() const {
         {kExchangeName, _exchangeSpec ? Value(_exchangeSpec->toBSON()) : Value()},
         {WriteConcernOptions::kWriteConcernField,
          _writeConcern ? Value(_writeConcern->toBSON()) : Value()},
-        // Only serialize runtime constants if any were specified.
-        {kRuntimeConstants, _runtimeConstants ? Value(_runtimeConstants->toBSON()) : Value()},
+        {kLet, !letParameters.isEmpty() ? Value(letParameters) : Value()},
         {kUse44SortKeys, _use44SortKeys ? Value(true) : Value()},
         {kUseNewUpsert, _useNewUpsert ? Value(true) : Value()},
         {kIsMapReduceCommand, _isMapReduceCommand ? Value(true) : Value()},

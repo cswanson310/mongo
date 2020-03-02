@@ -36,6 +36,7 @@
 #include "mongo/db/query/collation/collation_spec.h"
 #include "mongo/db/query/collation/collator_factory_interface.h"
 #include "mongo/util/intrusive_counter.h"
+#include "mongo/util/scopeguard.h"
 
 namespace mongo {
 
@@ -59,7 +60,7 @@ ExpressionContext::ExpressionContext(OperationContext* opCtx,
                         request.shouldBypassDocumentValidation(),
                         request.getIsMapReduceCommand(),
                         request.getNamespaceString(),
-                        request.getRuntimeConstants(),
+                        request.letParameters,
                         std::move(collator),
                         std::move(processInterface),
                         std::move(resolvedNamespaces),
@@ -67,7 +68,7 @@ ExpressionContext::ExpressionContext(OperationContext* opCtx,
     // Any request which did not originate from a mongoS, or which did originate from a mongoS but
     // has the 'useNewUpsert' flag set, can use the new upsertSupplied mechanism for $merge.
     // TODO SERVER-44884: Remove this flag after we branch for 4.5.
-    useNewUpsert = request.getUseNewUpsert() || !request.isFromMongos();
+    useNewUpsert = useNewUpsert || request.getUseNewUpsert();
 
     if (request.getIsMapReduceCommand()) {
         // mapReduce command JavaScript invocation is only subject to the server global
@@ -85,7 +86,7 @@ ExpressionContext::ExpressionContext(
     bool bypassDocumentValidation,
     bool isMapReduce,
     const NamespaceString& ns,
-    const boost::optional<RuntimeConstants>& runtimeConstants,
+    const BSONObj letParameters,
     std::unique_ptr<CollatorInterface> collator,
     const std::shared_ptr<MongoProcessInterface>& mongoProcessInterface,
     StringMap<ExpressionContext::ResolvedNamespace> resolvedNamespaces,
@@ -107,13 +108,6 @@ ExpressionContext::ExpressionContext(
       _documentComparator(_collator.get()),
       _valueComparator(_collator.get()),
       _resolvedNamespaces(std::move(resolvedNamespaces)) {
-
-    if (runtimeConstants) {
-        variables.setRuntimeConstants(*runtimeConstants);
-    } else {
-        variables.setDefaultRuntimeConstants(opCtx);
-    }
-
     if (!isMapReduce) {
         jsHeapLimitMB = internalQueryJavaScriptHeapSizeLimitMB.load();
     }
@@ -123,12 +117,20 @@ ExpressionContext::ExpressionContext(
     // on mongoS will be issued as an aggregation to the shards and will use the other constructor.
     // TODO SERVER-44884: Remove this flag after we branch for 4.5.
     useNewUpsert = !fromMongos;
+
+    auto intrusiveThis = boost::intrusive_ptr{this};
+    ON_BLOCK_EXIT([&] {
+        intrusiveThis.detach();
+        unsafeRefDecRefCountTo(0u);
+    });
+    variables.seedVariablesWithLetParameters(
+        intrusiveThis, Variables::generateTimeConstantsIfNeeded(opCtx, letParameters));
 }
 
 ExpressionContext::ExpressionContext(OperationContext* opCtx,
                                      std::unique_ptr<CollatorInterface> collator,
                                      const NamespaceString& nss,
-                                     const boost::optional<RuntimeConstants>& runtimeConstants)
+                                     const BSONObj letParameters)
     : ns(nss),
       opCtx(opCtx),
       mongoProcessInterface(std::make_shared<StubMongoProcessInterface>()),
@@ -139,11 +141,13 @@ ExpressionContext::ExpressionContext(OperationContext* opCtx,
       _collator(std::move(collator)),
       _documentComparator(_collator.get()),
       _valueComparator(_collator.get()) {
-    if (runtimeConstants) {
-        variables.setRuntimeConstants(*runtimeConstants);
-    }
-
     jsHeapLimitMB = internalQueryJavaScriptHeapSizeLimitMB.load();
+    auto intrusiveThis = boost::intrusive_ptr{this};
+    ON_BLOCK_EXIT([&] {
+        intrusiveThis.detach();
+        unsafeRefDecRefCountTo(0u);
+    });
+    variables.seedVariablesWithLetParameters(intrusiveThis, letParameters);
 }
 
 void ExpressionContext::checkForInterrupt() {
@@ -189,7 +193,7 @@ intrusive_ptr<ExpressionContext> ExpressionContext::copyWith(
                                                     bypassDocumentValidation,
                                                     false,  // isMapReduce
                                                     ns,
-                                                    boost::none,  // runtimeConstants
+                                                    BSONObj{},  // letVariables
                                                     std::move(collator),
                                                     mongoProcessInterface,
                                                     _resolvedNamespaces,

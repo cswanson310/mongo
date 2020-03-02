@@ -160,6 +160,7 @@ TEST(AggregationRequestTest, ShouldNotSerializeOptionalValuesIfEquivalentToDefau
     request.setMaxTimeMS(0u);
     request.setUnwrappedReadPref(BSONObj());
     request.setReadConcern(BSONObj());
+    request.letParameters = BSONObj();
     request.setIsMapReduceCommand(false);
 
     auto expectedSerialization =
@@ -189,6 +190,8 @@ TEST(AggregationRequestTest, ShouldSerializeOptionalValuesIfSet) {
     const auto readConcernObj = BSON("level"
                                      << "linearizable");
     request.setReadConcern(readConcernObj);
+    const auto letObj = BSON("foo" << 23);
+    request.letParameters = letObj;
     request.setIsMapReduceCommand(true);
 
     auto expectedSerialization =
@@ -205,6 +208,7 @@ TEST(AggregationRequestTest, ShouldSerializeOptionalValuesIfSet) {
                  {repl::ReadConcernArgs::kReadConcernFieldName, readConcernObj},
                  {QueryRequest::kUnwrappedReadPrefField, readPrefObj},
                  {QueryRequest::cmdOptionMaxTimeMS, 10},
+                 {AggregationRequest::kLet, letObj},
                  {AggregationRequest::kIsMapReduceCommand, true}};
     ASSERT_DOCUMENT_EQ(request.serializeToCommandObj(), expectedSerialization);
 }

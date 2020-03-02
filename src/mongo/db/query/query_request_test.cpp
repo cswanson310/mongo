@@ -503,8 +503,7 @@ TEST(QueryRequestTest, ParseFromCommandValidMinMax) {
 }
 
 TEST(QueryRequestTest, ParseFromCommandAllNonOptionFields) {
-    RuntimeConstants rtc{Date_t::now(), Timestamp(1, 1)};
-    BSONObj rtcObj = BSON("runtimeConstants" << rtc.toBSON());
+    auto now = Date_t::now();
     BSONObj cmdObj = fromjson(
                          "{find: 'testns',"
                          "filter: {a: 1},"
@@ -518,7 +517,8 @@ TEST(QueryRequestTest, ParseFromCommandAllNonOptionFields) {
                          "skip: 5,"
                          "batchSize: 90,"
                          "singleBatch: false}")
-                         .addField(rtcObj["runtimeConstants"]);
+                         .addField(BSON("let" << BSON("NOW" << now << "CLUSTER_TIME"
+                                                            << Timestamp(1, 1)))["let"]);
     const NamespaceString nss("test.testns");
     bool isExplain = false;
     unique_ptr<QueryRequest> qr(
@@ -543,9 +543,8 @@ TEST(QueryRequestTest, ParseFromCommandAllNonOptionFields) {
     ASSERT_EQUALS(3, *qr->getLimit());
     ASSERT_EQUALS(5, *qr->getSkip());
     ASSERT_EQUALS(90, *qr->getBatchSize());
-    ASSERT(qr->getRuntimeConstants().has_value());
-    ASSERT_EQUALS(qr->getRuntimeConstants()->getLocalNow(), rtc.getLocalNow());
-    ASSERT_EQUALS(qr->getRuntimeConstants()->getClusterTime(), rtc.getClusterTime());
+    ASSERT_EQ(now, qr->letParameters["NOW"].Date());
+    ASSERT_EQ(Timestamp(1, 1), qr->letParameters["CLUSTER_TIME"].timestamp());
     ASSERT(qr->wantMore());
 }
 
@@ -838,30 +837,15 @@ TEST(QueryRequestTest, ParseFromCommandReadOnceWrongType) {
     ASSERT_EQ(ErrorCodes::FailedToParse, result.getStatus());
 }
 
-TEST(QueryRequestTest, ParseFromCommandRuntimeConstantsWrongType) {
+TEST(QueryRequestTest, ParseFromCommandLetVariablesWrongType) {
     BSONObj cmdObj = BSON("find"
                           << "testns"
-                          << "runtimeConstants"
+                          << "let"
                           << "shouldNotBeString");
     const NamespaceString nss("test.testns");
     bool isExplain = false;
     auto result = QueryRequest::makeFromFindCommand(nss, cmdObj, isExplain);
     ASSERT_EQ(ErrorCodes::FailedToParse, result.getStatus());
-}
-
-TEST(QueryRequestTest, ParseFromCommandRuntimeConstantsSubfieldsWrongType) {
-    BSONObj cmdObj = BSON("find"
-                          << "testns"
-                          << "runtimeConstants"
-                          << BSON("localNow"
-                                  << "shouldBeDate"
-                                  << "clusterTime"
-                                  << "shouldBeTimestamp"));
-    const NamespaceString nss("test.testns");
-    bool isExplain = false;
-    ASSERT_THROWS_CODE(QueryRequest::makeFromFindCommand(nss, cmdObj, isExplain),
-                       AssertionException,
-                       ErrorCodes::TypeMismatch);
 }
 
 TEST(QueryRequestTest, ParseFromCommandUse44SortKeysWrongType) {
@@ -1007,8 +991,7 @@ TEST(QueryRequestTest, ParseFromCommandEmptyResumeToken) {
 //
 
 TEST(QueryRequestTest, AsFindCommandAllNonOptionFields) {
-    BSONObj rtcObj =
-        BSON("runtimeConstants" << (RuntimeConstants{Date_t::now(), Timestamp(1, 1)}.toBSON()));
+    auto now = Date_t::now();
     BSONObj cmdObj = fromjson(
                          "{find: 'testns',"
                          "filter: {a: 1},"
@@ -1021,7 +1004,8 @@ TEST(QueryRequestTest, AsFindCommandAllNonOptionFields) {
                          "limit: 3,"
                          "batchSize: 90,"
                          "singleBatch: true}")
-                         .addField(rtcObj["runtimeConstants"]);
+                         .addField(BSON("let" << BSON("NOW" << now << "CLUSTER_TIME"
+                                                            << Timestamp(1, 1)))["let"]);
     const NamespaceString nss("test.testns");
     bool isExplain = false;
     unique_ptr<QueryRequest> qr(
@@ -1030,8 +1014,7 @@ TEST(QueryRequestTest, AsFindCommandAllNonOptionFields) {
 }
 
 TEST(QueryRequestTest, AsFindCommandWithUuidAllNonOptionFields) {
-    BSONObj rtcObj =
-        BSON("runtimeConstants" << (RuntimeConstants{Date_t::now(), Timestamp(1, 1)}.toBSON()));
+    auto now = Date_t::now();
     BSONObj cmdObj =
         fromjson(
             // This binary value is UUID("01234567-89ab-cdef-edcb-a98765432101")
@@ -1046,7 +1029,8 @@ TEST(QueryRequestTest, AsFindCommandWithUuidAllNonOptionFields) {
             "limit: 3,"
             "batchSize: 90,"
             "singleBatch: true}")
-            .addField(rtcObj["runtimeConstants"]);
+            .addField(
+                BSON("let" << BSON("NOW" << now << "CLUSTER_TIME" << Timestamp(1, 1)))["let"]);
     const NamespaceString nss("test.testns");
     bool isExplain = false;
     unique_ptr<QueryRequest> qr(
@@ -1209,7 +1193,7 @@ TEST(QueryRequestTest, DefaultQueryParametersCorrect) {
     ASSERT_EQUALS(false, qr->isTailableAndAwaitData());
     ASSERT_EQUALS(false, qr->isExhaust());
     ASSERT_EQUALS(false, qr->isAllowPartialResults());
-    ASSERT_EQUALS(false, qr->getRuntimeConstants().has_value());
+    ASSERT_EQUALS(true, qr->letParameters.isEmpty());
     ASSERT_EQUALS(false, qr->allowDiskUse());
 }
 
@@ -1514,18 +1498,17 @@ TEST(QueryRequestTest, ConvertToAggregationWithAllowSpeculativeMajorityReadFails
     ASSERT_EQ(ErrorCodes::InvalidPipelineOperator, aggCmd.getStatus().code());
 }
 
-TEST(QueryRequestTest, ConvertToAggregationWithRuntimeConstantsSucceeds) {
-    RuntimeConstants rtc{Date_t::now(), Timestamp(1, 1)};
-    QueryRequest qr(testns);
-    qr.setRuntimeConstants(rtc);
+TEST(QueryRequestTest, ConvertToAggregationWithLetParametersSucceeds) {
+    auto now = Date_t::now();
+    auto qr = QueryRequest{testns};
+    qr.letParameters = BSON("NOW" << now << "CLUSTER_TIME" << Timestamp(1, 1));
     auto agg = qr.asAggregationCommand();
     ASSERT_OK(agg);
 
     auto ar = AggregationRequest::parseFromBSON(testns, agg.getValue());
     ASSERT_OK(ar.getStatus());
-    ASSERT(ar.getValue().getRuntimeConstants().has_value());
-    ASSERT_EQ(ar.getValue().getRuntimeConstants()->getLocalNow(), rtc.getLocalNow());
-    ASSERT_EQ(ar.getValue().getRuntimeConstants()->getClusterTime(), rtc.getClusterTime());
+    ASSERT_EQ(now, ar.getValue().letParameters["NOW"].Date());
+    ASSERT_EQ(Timestamp(1, 1), ar.getValue().letParameters["CLUSTER_TIME"].timestamp());
 }
 
 TEST(QueryRequestTest, ConvertToAggregationWithAllowDiskUseTrueSucceeds) {

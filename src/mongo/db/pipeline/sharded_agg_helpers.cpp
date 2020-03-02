@@ -122,11 +122,10 @@ RemoteCursor openChangeStreamNewShardMonitor(const boost::intrusive_ptr<Expressi
 BSONObj genericTransformForShards(MutableDocument&& cmdForShards,
                                   const boost::intrusive_ptr<ExpressionContext>& expCtx,
                                   boost::optional<ExplainOptions::Verbosity> explainVerbosity,
-                                  const boost::optional<RuntimeConstants>& constants,
+                                  BSONObj letParameters,
                                   BSONObj collationObj) {
-    if (constants) {
-        cmdForShards[AggregationRequest::kRuntimeConstants] = Value(constants.get().toBSON());
-    }
+    if (!letParameters.isEmpty())
+        cmdForShards[AggregationRequest::kLet] = Value(letParameters);
 
     cmdForShards[AggregationRequest::kFromMongosName] = Value(expCtx->inMongos);
     // If this is a request for an aggregation explain, then we must wrap the aggregate inside an
@@ -705,7 +704,7 @@ BSONObj createPassthroughCommandForShard(
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
     Document serializedCommand,
     boost::optional<ExplainOptions::Verbosity> explainVerbosity,
-    const boost::optional<RuntimeConstants>& constants,
+    BSONObj letParameters,
     Pipeline* pipeline,
     BSONObj collationObj) {
     // Create the command for the shards.
@@ -715,7 +714,7 @@ BSONObj createPassthroughCommandForShard(
     }
 
     return genericTransformForShards(
-        std::move(targetedCmd), expCtx, explainVerbosity, constants, collationObj);
+        std::move(targetedCmd), expCtx, explainVerbosity, letParameters, collationObj);
 }
 
 BSONObj createCommandForTargetedShards(const boost::intrusive_ptr<ExpressionContext>& expCtx,
@@ -753,11 +752,12 @@ BSONObj createCommandForTargetedShards(const boost::intrusive_ptr<ExpressionCont
     targetedCmd[AggregationRequest::kExchangeName] =
         exchangeSpec ? Value(exchangeSpec->exchangeSpec.toBSON()) : Value();
 
-    return genericTransformForShards(std::move(targetedCmd),
-                                     expCtx,
-                                     expCtx->explain,
-                                     expCtx->getRuntimeConstants(),
-                                     expCtx->getCollatorBSON());
+    return genericTransformForShards(
+        std::move(targetedCmd),
+        expCtx,
+        expCtx->explain,
+        expCtx->variables.serializeLetParameters(expCtx->variablesParseState),
+        expCtx->getCollatorBSON());
 }
 
 /**
@@ -837,12 +837,13 @@ DispatchShardPipelineResults dispatchShardPipeline(
         !expCtx->explain, /* appendWC */
         splitPipelines ? createCommandForTargetedShards(
                              expCtx, serializedCommand, *splitPipelines, exchangeSpec, true)
-                       : createPassthroughCommandForShard(expCtx,
-                                                          serializedCommand,
-                                                          expCtx->explain,
-                                                          expCtx->getRuntimeConstants(),
-                                                          pipeline.get(),
-                                                          collationObj));
+                       : createPassthroughCommandForShard(
+                             expCtx,
+                             serializedCommand,
+                             expCtx->explain,
+                             expCtx->variables.serializeLetParameters(expCtx->variablesParseState),
+                             pipeline.get(),
+                             collationObj));
 
     // A $changeStream pipeline must run on all shards, and will also open an extra cursor on the
     // config server in order to monitor for new shards. To guarantee that we do not miss any

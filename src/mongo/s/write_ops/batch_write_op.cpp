@@ -498,8 +498,7 @@ BatchedCommandRequest BatchWriteOp::buildBatchRequest(
                 return BatchedCommandRequest([&] {
                     write_ops::Update updateOp(_clientRequest.getNS());
                     updateOp.setUpdates(std::move(*updates));
-                    // Each child batch inherits its runtime constants from the parent batch.
-                    updateOp.setRuntimeConstants(_clientRequest.getRuntimeConstants());
+                    updateOp.setLet(_clientRequest.getLet());
                     return updateOp;
                 }());
             }

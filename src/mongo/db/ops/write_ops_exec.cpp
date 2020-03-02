@@ -714,7 +714,7 @@ static SingleWriteResult performSingleUpdateOpWithDupKeyRetry(OperationContext* 
                                                               const NamespaceString& ns,
                                                               StmtId stmtId,
                                                               const write_ops::UpdateOpEntry& op,
-                                                              RuntimeConstants runtimeConstants) {
+                                                              BSONObj let) {
     globalOpCounters.gotUpdate();
     ServerWriteConcernMetrics::get(opCtx)->recordWriteConcernForUpdate(opCtx->getWriteConcern());
     auto& curOp = *CurOp::get(opCtx);
@@ -735,7 +735,7 @@ static SingleWriteResult performSingleUpdateOpWithDupKeyRetry(OperationContext* 
     request.setQuery(op.getQ());
     request.setUpdateModification(op.getU());
     request.setUpdateConstants(op.getC());
-    request.setRuntimeConstants(std::move(runtimeConstants));
+    request.letParameters = std::move(let);
     request.setCollation(write_ops::collationOf(op));
     request.setStmtId(stmtId);
     request.setArrayFilters(write_ops::arrayFiltersOf(op));
@@ -799,10 +799,11 @@ WriteResult performUpdates(OperationContext* opCtx, const write_ops::Update& who
     WriteResult out;
     out.results.reserve(wholeOp.getUpdates().size());
 
-    // If the update command specified runtime constants, we adopt them. Otherwise, we set them to
-    // the current local and cluster time. These constants are applied to each update in the batch.
-    const auto& runtimeConstants =
-        wholeOp.getRuntimeConstants().value_or(Variables::generateRuntimeConstants(opCtx));
+    const auto& let = Variables::generateTimeConstantsIfNeeded(
+        opCtx,
+        BSONObjBuilder{wholeOp.getLet().value_or(BSONObj{})}
+            .appendElementsUnique(wholeOp.getRuntimeConstants().value_or(BSONObj{}))
+            .obj());
 
     for (auto&& singleOp : wholeOp.getUpdates()) {
         const auto stmtId = getStmtIdForWriteOp(opCtx, wholeOp, stmtIdIndex++);
@@ -830,7 +831,7 @@ WriteResult performUpdates(OperationContext* opCtx, const write_ops::Update& who
         try {
             lastOpFixer.startingOp();
             out.results.emplace_back(performSingleUpdateOpWithDupKeyRetry(
-                opCtx, wholeOp.getNamespace(), stmtId, singleOp, runtimeConstants));
+                opCtx, wholeOp.getNamespace(), stmtId, singleOp, let));
             lastOpFixer.finishedOpSuccessfully();
         } catch (const DBException& ex) {
             const bool canContinue =

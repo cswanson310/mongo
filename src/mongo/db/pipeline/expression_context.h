@@ -44,7 +44,6 @@
 #include "mongo/db/pipeline/aggregation_request.h"
 #include "mongo/db/pipeline/javascript_execution.h"
 #include "mongo/db/pipeline/process_interface/mongo_process_interface.h"
-#include "mongo/db/pipeline/runtime_constants_gen.h"
 #include "mongo/db/pipeline/variables.h"
 #include "mongo/db/query/collation/collator_interface.h"
 #include "mongo/db/query/datetime/date_time_support.h"
@@ -122,7 +121,7 @@ public:
                       bool bypassDocumentValidation,
                       bool isMapReduceCommand,
                       const NamespaceString& ns,
-                      const boost::optional<RuntimeConstants>& runtimeConstants,
+                      const BSONObj letParameters,
                       std::unique_ptr<CollatorInterface> collator,
                       const std::shared_ptr<MongoProcessInterface>& mongoProcessInterface,
                       StringMap<ExpressionContext::ResolvedNamespace> resolvedNamespaces,
@@ -137,7 +136,7 @@ public:
     ExpressionContext(OperationContext* opCtx,
                       std::unique_ptr<CollatorInterface> collator,
                       const NamespaceString& ns,
-                      const boost::optional<RuntimeConstants>& runtimeConstants = boost::none);
+                      const BSONObj letParameters = BSONObj{});
 
     /**
      * Used by a pipeline to check for interrupts so that killOp() works. Throws a UserAssertion if
@@ -257,10 +256,6 @@ public:
         _resolvedNamespaces = std::move(resolvedNamespaces);
     }
 
-    auto getRuntimeConstants() const {
-        return variables.getRuntimeConstants();
-    }
-
     /**
      * Retrieves the Javascript Scope for the current thread or creates a new one if it has not been
      * created yet. Initializes the Scope with the 'jsScope' variables from the runtimeConstants.
@@ -270,28 +265,25 @@ public:
      * Returns a JsExec and a boolean indicating whether the Scope was created as part of this call.
      */
     auto getJsExecWithScope(bool forceLoadOfStoredProcedures = false) const {
+        invariant(!(inMongos && forceLoadOfStoredProcedures));
         uassert(31264,
                 "Cannot run server-side javascript without the javascript engine enabled",
                 getGlobalScriptEngine());
-        RuntimeConstants runtimeConstants = getRuntimeConstants();
-        const boost::optional<bool> isMapReduceCommand = runtimeConstants.getIsMapReduce();
-        if (inMongos) {
-            invariant(!forceLoadOfStoredProcedures);
-            invariant(!isMapReduceCommand);
-        }
 
         // Stored procedures are only loaded for the $where expression and MapReduce command.
-        const bool loadStoredProcedures = forceLoadOfStoredProcedures || isMapReduceCommand;
+        const bool loadStoredProcedures = forceLoadOfStoredProcedures ||
+            variables.getValue(Variables::kIsMapReduceId).coerceToBool();
 
-        if (hasWhereClause && !loadStoredProcedures) {
+        if (hasWhereClause && !loadStoredProcedures)
             uasserted(4649200,
                       "A single operation cannot use both JavaScript aggregation expressions and "
                       "$where.");
-        }
 
-        const boost::optional<mongo::BSONObj>& scope = runtimeConstants.getJsScope();
-        return JsExecution::get(
-            opCtx, scope.get_value_or(BSONObj()), ns.db(), loadStoredProcedures, jsHeapLimitMB);
+        return JsExecution::get(opCtx,
+                                variables.getValue(Variables::kJsScopeId).getDocument().toBson(),
+                                ns.db(),
+                                loadStoredProcedures,
+                                jsHeapLimitMB);
     }
 
     // The explain verbosity requested by the user, or boost::none if no explain was requested.

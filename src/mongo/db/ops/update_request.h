@@ -34,7 +34,6 @@
 #include "mongo/db/logical_session_id.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/ops/write_ops_parsers.h"
-#include "mongo/db/pipeline/runtime_constants_gen.h"
 #include "mongo/db/query/explain.h"
 #include "mongo/util/str.h"
 
@@ -108,14 +107,6 @@ public:
 
     inline const boost::optional<BSONObj>& getUpdateConstants() const {
         return _updateConstants;
-    }
-
-    inline void setRuntimeConstants(RuntimeConstants runtimeConstants) {
-        _runtimeConstants = std::move(runtimeConstants);
-    }
-
-    inline const boost::optional<RuntimeConstants>& getRuntimeConstants() const {
-        return _runtimeConstants;
     }
 
     inline void setArrayFilters(const std::vector<BSONObj>& arrayFilters) {
@@ -249,8 +240,8 @@ public:
             builder << " updateConstants: " << *_updateConstants;
         }
 
-        if (_runtimeConstants) {
-            builder << " runtimeConstants: " << _runtimeConstants->toBSON().toString();
+        if (!letParameters.isEmpty()) {
+            builder << " let: " << letParameters.toString();
         }
 
         builder << " god: " << _god;
@@ -261,6 +252,10 @@ public:
         builder << " isExplain: " << _isExplain;
         return builder.str();
     }
+
+    // A document containing constants; i.e. values that do not change once computed (e.g. $$NOW).
+    // For an update command, these can be accessed inside $expr and pipeline-style updates.
+    BSONObj letParameters;
 
 private:
     const NamespaceString& _nsString;
@@ -285,15 +280,9 @@ private:
     // Contains the modifiers to apply to matched objects, or a replacement document.
     write_ops::UpdateModification _updateMod;
 
-    // User-defined constant values to be used with a pipeline-style update. Those are different
-    // from the '_runtimeConstants' as they can be specified by the user for each individual
-    // element of the 'updates' array in the 'update' command. The '_runtimeConstants' contains
-    // runtime system constant values which remain unchanged for all update statements in the
-    // 'update' command.
+    // User-defined constant values to be used with a pipeline-style update. These can be specified
+    // by the user for each individual element of the 'updates' array in the 'update' command.
     boost::optional<BSONObj> _updateConstants;
-
-    // System-defined constant values which may be required by the query or update operation.
-    boost::optional<RuntimeConstants> _runtimeConstants;
 
     // Filters to specify which array elements should be updated.
     std::vector<BSONObj> _arrayFilters;

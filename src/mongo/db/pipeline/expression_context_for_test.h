@@ -30,6 +30,7 @@
 #pragma once
 
 #include <boost/optional.hpp>
+#include <memory>
 
 #include "mongo/db/pipeline/expression_context.h"
 #include "mongo/db/pipeline/process_interface/stub_mongo_process_interface.h"
@@ -60,7 +61,7 @@ public:
                             false,        // bypassDocumentValidation,
                             false,        // isMapReduce
                             nss,
-                            RuntimeConstants(Date_t::now(), Timestamp(1, 0)),
+                            BSON("NOW" << Date_t::now() << "CLUSTER_TIME" << Timestamp(1, 0)),
                             {},  // collator
                             std::make_shared<StubMongoProcessInterface>(),
                             {},  // resolvedNamespaces
@@ -89,7 +90,7 @@ public:
                             false,        // bypassDocumentValidation,
                             false,        // isMapReduce
                             nss,
-                            RuntimeConstants(Date_t::now(), Timestamp(1, 0)),
+                            BSON("NOW" << Date_t::now() << "CLUSTER_TIME" << Timestamp(1, 0)),
                             {},  // collator
                             std::make_shared<StubMongoProcessInterface>(),
                             {},  // resolvedNamespaces

@@ -101,6 +101,7 @@ const char QueryRequest::kOplogReplayField[] = "oplogReplay";
 const char QueryRequest::kNoCursorTimeoutField[] = "noCursorTimeout";
 const char QueryRequest::kAwaitDataField[] = "awaitData";
 const char QueryRequest::kPartialResultsField[] = "allowPartialResults";
+const char QueryRequest::kLet[] = "let";
 const char QueryRequest::kRuntimeConstantsField[] = "runtimeConstants";
 const char QueryRequest::kTermField[] = "term";
 const char QueryRequest::kOptionsField[] = "options";
@@ -342,14 +343,14 @@ StatusWith<unique_ptr<QueryRequest>> QueryRequest::parseFromFindCommand(unique_p
             }
 
             qr->_allowPartialResults = el.boolean();
-        } else if (fieldName == kRuntimeConstantsField) {
-            Status status = checkFieldType(el, Object);
-            if (!status.isOK()) {
+        } else if (fieldName == kRuntimeConstantsField || kLet == fieldName) {
+            // TODO SERVER-46384: Remove 'runtimeConstants' in 4.5 since it is redundant with 'let'
+            // and no longer sent to shards.
+            if (Status status = checkFieldType(el, Object); !status.isOK())
                 return status;
-            }
-            qr->_runtimeConstants =
-                RuntimeConstants::parse(IDLParserErrorContext(kRuntimeConstantsField),
-                                        cmdObj.getObjectField(kRuntimeConstantsField));
+            auto bob = BSONObjBuilder{qr->letParameters};
+            bob.appendElementsUnique(el.embeddedObject());
+            qr->letParameters = bob.obj();
         } else if (fieldName == kOptionsField) {
             // 3.0.x versions of the shell may generate an explain of a find command with an
             // 'options' field. We accept this only if the 'options' field is empty so that
@@ -573,11 +574,8 @@ void QueryRequest::asFindCommandInternal(BSONObjBuilder* cmdBuilder) const {
         cmdBuilder->append(kPartialResultsField, true);
     }
 
-    if (_runtimeConstants) {
-        BSONObjBuilder rtcBuilder(cmdBuilder->subobjStart(kRuntimeConstantsField));
-        _runtimeConstants->serialize(&rtcBuilder);
-        rtcBuilder.doneFast();
-    }
+    if (!letParameters.isEmpty())
+        cmdBuilder->append(kLet, letParameters);
 
     if (_replicationTerm) {
         cmdBuilder->append(kTermField, *_replicationTerm);
@@ -1126,11 +1124,9 @@ StatusWith<BSONObj> QueryRequest::asAggregationCommand() const {
     if (_allowDiskUse) {
         aggregationBuilder.append(QueryRequest::kAllowDiskUseField, _allowDiskUse);
     }
-    if (_runtimeConstants) {
-        BSONObjBuilder rtcBuilder(aggregationBuilder.subobjStart(kRuntimeConstantsField));
-        _runtimeConstants->serialize(&rtcBuilder);
-        rtcBuilder.doneFast();
-    }
+    if (!letParameters.isEmpty())
+        aggregationBuilder.append(kLet, letParameters);
+
     return StatusWith<BSONObj>(aggregationBuilder.obj());
 }
 }  // namespace mongo

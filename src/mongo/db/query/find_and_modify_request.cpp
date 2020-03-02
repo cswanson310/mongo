@@ -47,6 +47,7 @@ const char kSortField[] = "sort";
 const char kHintField[] = "hint";
 const char kCollationField[] = "collation";
 const char kArrayFiltersField[] = "arrayFilters";
+const char kLet[] = "let";
 const char kRuntimeConstantsField[] = "runtimeConstants";
 const char kRemoveField[] = "remove";
 const char kUpdateField[] = "update";
@@ -129,11 +130,8 @@ BSONObj FindAndModifyRequest::toBSON(const BSONObj& commandPassthroughFields) co
         arrayBuilder.doneFast();
     }
 
-    if (_runtimeConstants) {
-        BSONObjBuilder rtcBuilder(builder.subobjStart(kRuntimeConstantsField));
-        _runtimeConstants->serialize(&rtcBuilder);
-        rtcBuilder.doneFast();
-    }
+    if (!letParameters.isEmpty())
+        builder.append(kLet, letParameters);
 
     if (_shouldReturnNew) {
         builder.append(kNewField, _shouldReturnNew);
@@ -169,7 +167,7 @@ StatusWith<FindAndModifyRequest> FindAndModifyRequest::parseFromBSON(NamespaceSt
     bool bypassDocumentValidation = false;
     bool arrayFiltersSet = false;
     std::vector<BSONObj> arrayFilters;
-    boost::optional<RuntimeConstants> runtimeConstants;
+    BSONObj letParameters;
     bool writeConcernOptionsSet = false;
     WriteConcernOptions writeConcernOptions;
 
@@ -241,10 +239,17 @@ StatusWith<FindAndModifyRequest> FindAndModifyRequest::parseFromBSON(NamespaceSt
                     arrayFilters.push_back(arrayFilter.embeddedObject());
                 }
             }
-        } else if (field == kRuntimeConstantsField) {
-            runtimeConstants =
-                RuntimeConstants::parse(IDLParserErrorContext(kRuntimeConstantsField),
-                                        cmdObj.getObjectField(kRuntimeConstantsField));
+        } else if (field == kRuntimeConstantsField || field == kLet) {
+            // TODO SERVER-46384: Remove 'runtimeConstants' in 4.5 since it is redundant with 'let'
+            // and no longer sent to shards.
+            BSONElement letElt;
+            if (Status letEltStatus =
+                    bsonExtractTypedField(cmdObj, field, BSONType::Object, &letElt);
+                !letEltStatus.isOK())
+                return letEltStatus;
+            auto bob = BSONObjBuilder{letParameters};
+            bob.appendElementsUnique(letElt.embeddedObject());
+            letParameters = bob.obj();
         } else if (field == kWriteConcernField) {
             BSONElement writeConcernElt;
             Status writeConcernEltStatus = bsonExtractTypedField(
@@ -301,11 +306,9 @@ StatusWith<FindAndModifyRequest> FindAndModifyRequest::parseFromBSON(NamespaceSt
     request.setHint(hint);
     request.setCollation(collation);
     request.setBypassDocumentValidation(bypassDocumentValidation);
+    request.letParameters = letParameters;
     if (arrayFiltersSet) {
         request.setArrayFilters(std::move(arrayFilters));
-    }
-    if (runtimeConstants) {
-        request.setRuntimeConstants(*runtimeConstants);
     }
     if (writeConcernOptionsSet) {
         request.setWriteConcern(std::move(writeConcernOptions));

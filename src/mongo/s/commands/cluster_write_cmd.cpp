@@ -664,10 +664,8 @@ private:
     std::unique_ptr<CommandInvocation> parse(OperationContext* opCtx,
                                              const OpMsgRequest& request) final {
         auto parsedRequest = BatchedCommandRequest::parseUpdate(request);
-        uassert(51195,
-                "Cannot specify runtime constants option to a mongos",
-                !parsedRequest.hasRuntimeConstants());
-        parsedRequest.setRuntimeConstants(Variables::generateRuntimeConstants(opCtx));
+        parsedRequest.setLet(Variables::generateTimeConstantsIfNeeded(
+            opCtx, parsedRequest.getLet().value_or(BSONObj{})));
         return std::make_unique<Invocation>(this, request, std::move(parsedRequest));
     }
 

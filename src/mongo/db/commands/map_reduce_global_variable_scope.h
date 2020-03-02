@@ -43,9 +43,8 @@ namespace mongo {
 class MapReduceGlobalVariableScope {
 public:
     static MapReduceGlobalVariableScope parseFromBSON(const BSONElement& element) {
-        if (element.type() == jstNULL) {
-            return MapReduceGlobalVariableScope();
-        }
+        if (element.type() == jstNULL)
+            return MapReduceGlobalVariableScope(BSONObj{});
         uassert(ErrorCodes::BadValue, "'scope' must be an object", element.type() == Object);
         return MapReduceGlobalVariableScope(element.embeddedObject());
     }

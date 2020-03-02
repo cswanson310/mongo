@@ -390,8 +390,11 @@ private:
             updateRequest.setQuery(_batch.getUpdates()[0].getQ());
             updateRequest.setUpdateModification(_batch.getUpdates()[0].getU());
             updateRequest.setUpdateConstants(_batch.getUpdates()[0].getC());
-            updateRequest.setRuntimeConstants(
-                _batch.getRuntimeConstants().value_or(Variables::generateRuntimeConstants(opCtx)));
+            updateRequest.letParameters = Variables::generateTimeConstantsIfNeeded(
+                opCtx,
+                BSONObjBuilder{_batch.getLet().value_or(BSONObj{})}
+                    .appendElementsUnique(_batch.getRuntimeConstants().value_or(BSONObj{}))
+                    .obj());
             updateRequest.setCollation(write_ops::collationOf(_batch.getUpdates()[0]));
             updateRequest.setArrayFilters(write_ops::arrayFiltersOf(_batch.getUpdates()[0]));
             updateRequest.setMulti(_batch.getUpdates()[0].getMulti());

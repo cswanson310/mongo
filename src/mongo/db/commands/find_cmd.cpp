@@ -70,9 +70,7 @@ std::unique_ptr<QueryRequest> parseCmdObjectToQueryRequest(OperationContext* opC
                                                            bool isExplain) {
     auto qr = uassertStatusOK(
         QueryRequest::makeFromFindCommand(std::move(nss), std::move(cmdObj), isExplain));
-    if (!qr->getRuntimeConstants()) {
-        qr->setRuntimeConstants(Variables::generateRuntimeConstants(opCtx));
-    }
+    qr->letParameters = Variables::generateTimeConstantsIfNeeded(opCtx, qr->letParameters);
     return qr;
 }
 
@@ -109,7 +107,7 @@ boost::intrusive_ptr<ExpressionContext> makeExpressionContext(
                                           false,  // bypassDocumentValidation
                                           false,  // isMapReduceCommand
                                           queryRequest.nss(),
-                                          queryRequest.getRuntimeConstants(),
+                                          queryRequest.letParameters,
                                           std::move(collator),
                                           nullptr,  // mongoProcessInterface
                                           StringMap<ExpressionContext::ResolvedNamespace>{},

@@ -33,7 +33,6 @@
 
 #include "mongo/db/jsobj.h"
 #include "mongo/db/namespace_string.h"
-#include "mongo/db/pipeline/runtime_constants_gen.h"
 #include "mongo/db/query/plan_executor.h"
 
 namespace mongo {
@@ -60,9 +59,6 @@ public:
     }
     void setSort(const BSONObj& sort) {
         _sort = sort;
-    }
-    void setRuntimeConstants(RuntimeConstants runtimeConstants) {
-        _runtimeConstants = std::move(runtimeConstants);
     }
     void setCollation(const BSONObj& collation) {
         _collation = collation;
@@ -97,9 +93,6 @@ public:
     }
     const BSONObj& getSort() const {
         return _sort;
-    }
-    const boost::optional<RuntimeConstants>& getRuntimeConstants() const {
-        return _runtimeConstants;
     }
     const BSONObj& getCollation() const {
         return _collation;
@@ -137,6 +130,10 @@ public:
         return _stmtId;
     }
 
+    // A document containing constants; i.e. values that do not change once computed (e.g. $$NOW).
+    // For a delete command, these can be accessed inside $expr.
+    BSONObj letParameters;
+
 private:
     const NamespaceString& _nsString;
     BSONObj _hint;
@@ -144,7 +141,6 @@ private:
     BSONObj _proj;
     BSONObj _sort;
     BSONObj _collation;
-    boost::optional<RuntimeConstants> _runtimeConstants;
     // The statement id of this request.
     StmtId _stmtId = kUninitializedStmtId;
     bool _multi;

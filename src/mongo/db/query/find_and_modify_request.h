@@ -34,7 +34,6 @@
 #include "mongo/db/jsobj.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/ops/write_ops_parsers.h"
-#include "mongo/db/pipeline/runtime_constants_gen.h"
 #include "mongo/db/write_concern_options.h"
 
 namespace mongo {
@@ -171,25 +170,15 @@ public:
     void setArrayFilters(const std::vector<BSONObj>& arrayFilters);
 
     /**
-     * Sets any constant values which may be required by the query and/or update.
-     */
-    void setRuntimeConstants(RuntimeConstants runtimeConstants) {
-        _runtimeConstants = std::move(runtimeConstants);
-    }
-
-    /**
-     * Returns the runtime constants associated with this findAndModify request, if present.
-     */
-    const boost::optional<RuntimeConstants>& getRuntimeConstants() const {
-        return _runtimeConstants;
-    }
-
-    /**
      * Sets the write concern for this request.
      */
     void setWriteConcern(WriteConcernOptions writeConcern);
 
     void setBypassDocumentValidation(bool bypassDocumentValidation);
+
+    // A document containing constants; i.e. values that do not change once computed (e.g. $$NOW).
+    // For a find-and-modify command, these can be accessed inside $expr and pipeline-style updates.
+    BSONObj letParameters;
 
 private:
     /**
@@ -209,7 +198,6 @@ private:
     boost::optional<BSONObj> _hint;
     boost::optional<BSONObj> _collation;
     boost::optional<std::vector<BSONObj>> _arrayFilters;
-    boost::optional<RuntimeConstants> _runtimeConstants;
     bool _shouldReturnNew{false};
     boost::optional<WriteConcernOptions> _writeConcern;
     bool _bypassDocumentValidation{false};

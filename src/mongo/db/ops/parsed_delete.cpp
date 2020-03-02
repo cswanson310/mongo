@@ -70,10 +70,8 @@ Status ParsedDelete::parseRequest() {
         }
         collator = uassertStatusOK(std::move(statusWithCollator));
     }
-    _expCtx = make_intrusive<ExpressionContext>(_opCtx,
-                                                std::move(collator),
-                                                _request->getNamespaceString(),
-                                                _request->getRuntimeConstants());
+    _expCtx = make_intrusive<ExpressionContext>(
+        _opCtx, std::move(collator), _request->getNamespaceString(), _request->letParameters);
 
     if (CanonicalQuery::isSimpleIdQuery(_request->getQuery())) {
         return Status::OK();
@@ -106,10 +104,9 @@ Status ParsedDelete::parseQueryToCQ() {
         qr->setLimit(1);
     }
 
-    // If the delete request has runtime constants attached to it, pass them to the QueryRequest.
-    if (auto& runtimeConstants = _request->getRuntimeConstants()) {
-        qr->setRuntimeConstants(*runtimeConstants);
-    }
+    // If the delete request has let parameters attached to it, pass them to the QueryRequest.
+    if (auto&& let = _request->letParameters; !let.isEmpty())
+        qr->letParameters = let;
 
     auto statusWithCQ =
         CanonicalQuery::canonicalize(_opCtx,

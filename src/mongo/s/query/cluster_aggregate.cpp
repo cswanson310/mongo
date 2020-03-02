@@ -205,9 +205,6 @@ Status ClusterAggregate::runAggregate(OperationContext* opCtx,
                                       const PrivilegeVector& privileges,
                                       BSONObjBuilder* result) {
     uassert(51028, "Cannot specify exchange option to a mongos", !request.getExchangeSpec());
-    uassert(51143,
-            "Cannot specify runtime constants option to a mongos",
-            !request.getRuntimeConstants());
     uassert(51089,
             str::stream() << "Internal parameter(s) [" << AggregationRequest::kNeedsMergeName
                           << ", " << AggregationRequest::kFromMongosName

@@ -28,8 +28,10 @@
  */
 
 #include "mongo/db/pipeline/variables.h"
+#include "mongo/base/string_data.h"
 #include "mongo/db/client.h"
 #include "mongo/db/logical_clock.h"
+#include "mongo/db/pipeline/expression.h"
 #include "mongo/platform/basic.h"
 #include "mongo/platform/random.h"
 #include "mongo/util/str.h"
@@ -37,11 +39,23 @@
 
 namespace mongo {
 
+using namespace std::string_literals;
+
 constexpr Variables::Id Variables::kRootId;
 constexpr Variables::Id Variables::kRemoveId;
-
-const StringMap<Variables::Id> Variables::kBuiltinVarNameToId = {
-    {"ROOT", kRootId}, {"REMOVE", kRemoveId}, {"NOW", kNowId}, {"CLUSTER_TIME", kClusterTimeId}};
+const StringMap<Variables::Id> Variables::kBuiltinVarNameToId = {{"ROOT", kRootId},
+                                                                 {"REMOVE", kRemoveId},
+                                                                 {"NOW", kNowId},
+                                                                 {"CLUSTER_TIME", kClusterTimeId},
+                                                                 {"JS_SCOPE", kJsScopeId},
+                                                                 {"IS_MR", kIsMapReduceId}};
+const std::map<Variables::Id, std::string> Variables::kIdToBuiltinVarName = {
+    {kRootId, "ROOT"},
+    {kRemoveId, "REMOVE"},
+    {kNowId, "NOW"},
+    {kClusterTimeId, "CLUSTER_TIME"},
+    {kJsScopeId, "JS_SCOPE"},
+    {kIsMapReduceId, "IS_MR"}};
 
 void Variables::uassertValidNameForUserWrite(StringData varName) {
     // System variables users allowed to write to (currently just one)
@@ -98,19 +112,44 @@ void Variables::uassertValidNameForUserRead(StringData varName) {
     }
 }
 
+void Variables::seedVariablesWithLetParameters(boost::intrusive_ptr<ExpressionContext> expCtx,
+                                               const BSONObj letParameters) {
+    for (auto&& elem : letParameters) {
+        auto expr = Expression::parseOperand(expCtx, elem, expCtx->variablesParseState);
+        auto foldedExpr = expr->optimize();
+        uassert(31474,
+                "Command let Expression does not evaluate to constant "s + elem.toString(),
+                ExpressionConstant::isNullOrConstant(foldedExpr));
+        const auto sysVar = [&] {
+            // ROOT and REMOVE are excluded since they're not constants.
+            for (auto&& builtin : {"NOW"_sd, "CLUSTER_TIME"_sd, "JS_SCOPE"_sd, "IS_MR"_sd})
+                if (builtin == elem.fieldName())
+                    return builtin;
+            return ""_sd;
+        }();
+
+        if (!sysVar.empty())
+            _systemVars[kBuiltinVarNameToId.at(sysVar)] =
+                static_cast<ExpressionConstant&>(*foldedExpr).getValue();
+        else
+            setConstantValue(expCtx->variablesParseState.defineVariable(elem.fieldName()),
+                             static_cast<ExpressionConstant&>(*foldedExpr).getValue());
+    }
+}
+
 void Variables::setValue(Id id, const Value& value, bool isConstant) {
     uassert(17199, "can't use Variables::setValue to set a reserved builtin variable", id >= 0);
 
     const auto idAsSizeT = static_cast<size_t>(id);
-    if (idAsSizeT >= _valueList.size()) {
-        _valueList.resize(idAsSizeT + 1);
+    if (idAsSizeT >= _userVariableValues.size()) {
+        _userVariableValues.resize(idAsSizeT + 1);
     } else {
         // If a value has already been set for 'id', and that value was marked as constant, then it
         // is illegal to modify.
-        invariant(!_valueList[idAsSizeT].isConstant);
+        invariant(!_userVariableValues[idAsSizeT].isConstant);
     }
 
-    _valueList[idAsSizeT] = ValueAndState(value, isConstant);
+    _userVariableValues[idAsSizeT] = ValueAndState(value, isConstant);
 }
 
 void Variables::setValue(Variables::Id id, const Value& value) {
@@ -128,11 +167,18 @@ Value Variables::getUserDefinedValue(Variables::Id id) const {
 
     uassert(40434,
             str::stream() << "Requesting Variables::getValue with an out of range id: " << id,
-            static_cast<size_t>(id) < _valueList.size());
-    return _valueList[id].value;
+            static_cast<size_t>(id) < _userVariableValues.size());
+    return _userVariableValues[id].value;
 }
 
-Value Variables::getValue(Id id, const Document& root) const {
+BSONObj Variables::serializeLetParameters(const VariablesParseState& vps) const {
+    auto bob = BSONObjBuilder{};
+    for (auto&& [id, value] : _systemVars)
+        bob << kIdToBuiltinVarName.at(id) << value;
+    return bob.appendElements(vps.serialize(*this)).obj();
+}
+
+Value Variables::getValue(Id id, const Document& root, bool skipUserFacingChecks) const {
     if (id < 0) {
         // This is a reserved id for a builtin variable.
         switch (id) {
@@ -140,25 +186,23 @@ Value Variables::getValue(Id id, const Document& root) const {
                 return Value(root);
             case Variables::kRemoveId:
                 return Value();
+            case Variables::kJsScopeId:
+                uassert(4631100, "Use of undefined variable '$$JS_SCOPE'.", skipUserFacingChecks);
+            case Variables::kIsMapReduceId:
+                uassert(4631101, "Use of undefined variable '$$IS_MR'.", skipUserFacingChecks);
             case Variables::kNowId:
             case Variables::kClusterTimeId:
-                if (auto it = _runtimeConstants.find(id); it != _runtimeConstants.end()) {
+                if (auto it = _systemVars.find(id); it != _systemVars.end()) {
                     return it->second;
                 }
 
                 uasserted(51144,
                           str::stream() << "Builtin variable '$$" << getBuiltinVariableName(id)
                                         << "' is not available");
-                MONGO_UNREACHABLE;
-            case Variables::kJsScopeId:
-                uasserted(4631100, "Use of undefined variable '$$JS_SCOPE'.");
-            case Variables::kIsMapReduceId:
-                uasserted(4631101, "Use of undefined variable '$$IS_MR'.");
             default:
                 MONGO_UNREACHABLE;
         }
     }
-
     return getUserDefinedValue(id);
 }
 
@@ -173,61 +217,6 @@ Document Variables::getDocument(Id id, const Document& root) const {
         return var.getDocument();
 
     return Document();
-}
-
-RuntimeConstants Variables::getRuntimeConstants() const {
-    RuntimeConstants constants;
-
-    if (auto it = _runtimeConstants.find(kNowId); it != _runtimeConstants.end()) {
-        constants.setLocalNow(it->second.getDate());
-    }
-    if (auto it = _runtimeConstants.find(kClusterTimeId); it != _runtimeConstants.end()) {
-        constants.setClusterTime(it->second.getTimestamp());
-    }
-    if (auto it = _runtimeConstants.find(kJsScopeId); it != _runtimeConstants.end()) {
-        constants.setJsScope(it->second.getDocument().toBson());
-    }
-    if (auto it = _runtimeConstants.find(kIsMapReduceId); it != _runtimeConstants.end()) {
-        constants.setIsMapReduce(it->second.getBool());
-    }
-
-    return constants;
-}
-
-void Variables::setRuntimeConstants(const RuntimeConstants& constants) {
-    _runtimeConstants[kNowId] = Value(constants.getLocalNow());
-    // We use a null Timestamp to indicate that the clusterTime is not available; this can happen if
-    // the logical clock is not running. We do not use boost::optional because this would allow the
-    // IDL to serialize a RuntimConstants without clusterTime, which should always be an error.
-    if (!constants.getClusterTime().isNull()) {
-        _runtimeConstants[kClusterTimeId] = Value(constants.getClusterTime());
-    }
-
-    if (constants.getJsScope()) {
-        _runtimeConstants[kJsScopeId] = Value(constants.getJsScope().get());
-    }
-    if (constants.getIsMapReduce()) {
-        _runtimeConstants[kIsMapReduceId] = Value(constants.getIsMapReduce().get());
-    }
-}
-
-void Variables::setDefaultRuntimeConstants(OperationContext* opCtx) {
-    setRuntimeConstants(Variables::generateRuntimeConstants(opCtx));
-}
-
-RuntimeConstants Variables::generateRuntimeConstants(OperationContext* opCtx) {
-    // On a standalone, the clock may not be running and $$CLUSTER_TIME is unavailable. If the
-    // logical clock is available, set the clusterTime in the runtime constants. Otherwise, the
-    // clusterTime is set to the null Timestamp.
-    if (opCtx->getClient()) {
-        if (auto logicalClock = LogicalClock::get(opCtx); logicalClock) {
-            auto clusterTime = logicalClock->getClusterTime();
-            if (clusterTime != LogicalTime::kUninitialized) {
-                return {Date_t::now(), clusterTime.asTimestamp()};
-            }
-        }
-    }
-    return {Date_t::now(), Timestamp()};
 }
 
 Variables::Id VariablesParseState::defineVariable(StringData name) {

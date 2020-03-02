@@ -82,11 +82,6 @@ auto makeExpressionContext(OperationContext* opCtx,
                                       parsedMr.getOutOptions().getCollectionName()};
         resolvedNamespaces.try_emplace(outNss.coll(), outNss, std::vector<BSONObj>{});
     }
-    auto runtimeConstants = Variables::generateRuntimeConstants(opCtx);
-    if (parsedMr.getScope()) {
-        runtimeConstants.setJsScope(parsedMr.getScope()->getObj());
-    }
-    runtimeConstants.setIsMapReduce(true);
     auto expCtx = make_intrusive<ExpressionContext>(
         opCtx,
         verbosity,
@@ -96,7 +91,14 @@ auto makeExpressionContext(OperationContext* opCtx,
         parsedMr.getBypassDocumentValidation().get_value_or(false),
         true,  // isMapReduceCommand
         nss,
-        runtimeConstants,
+        [&] {
+            auto bob = BSONObjBuilder{};
+            if (auto&& scope = parsedMr.getScope())
+                if (auto&& obj = scope->getObj())
+                    bob << "JS_SCOPE" << *obj;
+            bob << "IS_MR" << true;
+            return Variables::generateTimeConstantsIfNeeded(opCtx, bob.obj());
+        }(),
         std::move(resolvedCollator),
         std::make_shared<MongosProcessInterface>(
             Grid::get(opCtx)->getExecutorPool()->getArbitraryExecutor()),
@@ -115,8 +117,9 @@ Document serializeToCommand(BSONObj originalCmd, const MapReduce& parsedMr, Pipe
         Value(Document{{"batchSize", std::numeric_limits<long long>::max()}});
     translatedCmd[AggregationRequest::kAllowDiskUseName] = Value(true);
     translatedCmd[AggregationRequest::kFromMongosName] = Value(true);
-    translatedCmd[AggregationRequest::kRuntimeConstants] =
-        Value(pipeline->getContext()->getRuntimeConstants().toBSON());
+    translatedCmd[AggregationRequest::kLet] =
+        Value(pipeline->getContext()->variables.serializeLetParameters(
+            pipeline->getContext()->variablesParseState));
     translatedCmd[AggregationRequest::kIsMapReduceCommand] = Value(true);
 
     if (shouldBypassDocumentValidationForCommand(originalCmd)) {

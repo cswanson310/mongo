@@ -29,15 +29,23 @@
 
 #pragma once
 
+#include <boost/intrusive_ptr.hpp>
+#include <map>
 #include <memory>
+#include <string>
 
+#include "mongo/bson/bsonobj.h"
+#include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/db/exec/document_value/document.h"
+#include "mongo/db/logical_clock.h"
 #include "mongo/db/operation_context.h"
-#include "mongo/db/pipeline/runtime_constants_gen.h"
 #include "mongo/stdx/unordered_map.h"
 #include "mongo/util/string_map.h"
 
 namespace mongo {
+
+class ExpressionContext;
+class VariablesParseState;
 
 /**
  * The state used as input and working space for Expressions.
@@ -49,9 +57,25 @@ public:
     using Id = int64_t;
 
     /**
-     * Generate runtime constants using the current local and cluster times.
+     * Generate time constants using the current local and cluster times.
      */
-    static RuntimeConstants generateRuntimeConstants(OperationContext* opCtx);
+    static auto generateTimeConstants(OperationContext* opCtx) {
+        if (opCtx->getClient())
+            if (auto logicalClock = LogicalClock::get(opCtx))
+                if (auto clusterTime = logicalClock->getClusterTime();
+                    clusterTime != LogicalTime::kUninitialized)
+                    return BSON("NOW" << Date_t::now() << "CLUSTER_TIME"
+                                      << clusterTime.asTimestamp());
+        return BSON("NOW" << Date_t::now() << "CLUSTER_TIME" << Timestamp());
+    }
+
+    static auto generateTimeConstantsIfNeeded(OperationContext* opCtx, BSONObj letParameters) {
+        if (letParameters.hasField("NOW") && letParameters.hasField("CLUSTER_TIME"))
+            return letParameters;
+        return BSONObjBuilder{letParameters}
+            .appendElementsUnique(generateTimeConstants(opCtx))
+            .obj();
+    }
 
     /**
      * Generates Variables::Id and keeps track of the number of Ids handed out. Each successive Id
@@ -79,15 +103,23 @@ public:
     }
 
     // Ids for builtin variables.
-    static constexpr Variables::Id kRootId = Id(-1);
-    static constexpr Variables::Id kRemoveId = Id(-2);
-    static constexpr Variables::Id kNowId = Id(-3);
-    static constexpr Variables::Id kClusterTimeId = Id(-4);
-    static constexpr Variables::Id kJsScopeId = Id(-5);
-    static constexpr Variables::Id kIsMapReduceId = Id(-6);
+    static constexpr auto kRootId = Id(-1);
+    static constexpr auto kRemoveId = Id(-2);
+    static constexpr auto kNowId = Id(-3);
+    static constexpr auto kClusterTimeId = Id(-4);
+    static constexpr auto kJsScopeId = Id(-5);
+    static constexpr auto kIsMapReduceId = Id(-6);
 
     // Map from builtin var name to reserved id number.
     static const StringMap<Id> kBuiltinVarNameToId;
+    static const std::map<Id, std::string> kIdToBuiltinVarName;
+
+    /**
+     * Sets the outermost layer of lexically scoped-variables based on let parameters passed to the
+     * command.
+     */
+    void seedVariablesWithLetParameters(boost::intrusive_ptr<ExpressionContext> expCtx,
+                                        const BSONObj letParameters);
 
     /**
      * Sets the value of a user-defined variable. Illegal to use with the reserved builtin variables
@@ -105,7 +137,15 @@ public:
      * Gets the value of a user-defined or system variable. If the 'id' provided represents the
      * special ROOT variable, then we return 'root' in Value form.
      */
-    Value getValue(Variables::Id id, const Document& root) const;
+    Value getValue(Variables::Id id, const Document& root, bool skipUserFacingChecks = false) const;
+
+    /**
+     * Gets the value of a user-defined or system variable. Skips user-facing checks and does not
+     * return the Document for ROOT.
+     */
+    auto getValue(Variables::Id id) const {
+        return getValue(id, Document{}, true);
+    }
 
     /**
      * Gets the value of a user-defined variable. Should only be called when we know 'id' represents
@@ -118,7 +158,8 @@ public:
      */
     bool hasConstantValue(Variables::Id id) const {
 
-        return _valueList.size() > static_cast<size_t>(id) && _valueList[id].isConstant;
+        return _userVariableValues.size() > static_cast<size_t>(id) &&
+            _userVariableValues[id].isConstant;
     }
 
     /**
@@ -131,20 +172,7 @@ public:
         return &_idGenerator;
     }
 
-    /**
-     * Serializes runtime constants. This is used to send the constants to shards.
-     */
-    RuntimeConstants getRuntimeConstants() const;
-
-    /**
-     * Deserialize runtime constants.
-     */
-    void setRuntimeConstants(const RuntimeConstants& constants);
-
-    /**
-     * Set the runtime constants using the current local and cluster times.
-     */
-    void setDefaultRuntimeConstants(OperationContext* opCtx);
+    BSONObj serializeLetParameters(const VariablesParseState& vps) const;
 
 private:
     struct ValueAndState {
@@ -168,8 +196,8 @@ private:
     }
 
     IdGenerator _idGenerator;
-    std::vector<ValueAndState> _valueList;
-    stdx::unordered_map<Id, Value> _runtimeConstants;
+    std::vector<ValueAndState> _userVariableValues;
+    stdx::unordered_map<Id, Value> _systemVars;
 };
 
 /**
@@ -212,6 +240,13 @@ public:
      * Returns the set of variable IDs defined at this scope.
      */
     std::set<Variables::Id> getDefinedVariableIDs() const;
+
+    auto serialize(const Variables& vars) const {
+        auto bob = BSONObjBuilder{};
+        for (auto&& [var_name, id] : _variables)
+            bob << var_name << vars.getValue(id);
+        return bob.obj();
+    }
 
     /**
      * Return a copy of this VariablesParseState. Will replace the copy's '_idGenerator' pointer

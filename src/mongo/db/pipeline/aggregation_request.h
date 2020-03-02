@@ -36,7 +36,6 @@
 #include "mongo/bson/bsonobj.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/pipeline/exchange_spec_gen.h"
-#include "mongo/db/pipeline/runtime_constants_gen.h"
 #include "mongo/db/query/explain_options.h"
 #include "mongo/db/write_concern_options.h"
 
@@ -63,6 +62,7 @@ public:
     static constexpr StringData kHintName = "hint"_sd;
     static constexpr StringData kExchangeName = "exchange"_sd;
     static constexpr StringData kRuntimeConstants = "runtimeConstants"_sd;
+    static constexpr StringData kLet = "let"_sd;
     static constexpr StringData kUse44SortKeys = "use44SortKeys"_sd;
     static constexpr StringData kUseNewUpsert = "useNewUpsert"_sd;
     static constexpr StringData kIsMapReduceCommand = "isMapReduceCommand"_sd;
@@ -215,10 +215,6 @@ public:
         return _writeConcern;
     }
 
-    const auto& getRuntimeConstants() const {
-        return _runtimeConstants;
-    }
-
     bool getUse44SortKeys() const {
         return _use44SortKeys;
     }
@@ -291,10 +287,6 @@ public:
         _writeConcern = writeConcern;
     }
 
-    void setRuntimeConstants(RuntimeConstants runtimeConstants) {
-        _runtimeConstants = std::move(runtimeConstants);
-    }
-
     void setUse44SortKeys(bool use44SortKeys) {
         _use44SortKeys = use44SortKeys;
     }
@@ -306,6 +298,9 @@ public:
     void setIsMapReduceCommand(bool isMapReduce) {
         _isMapReduceCommand = isMapReduce;
     }
+
+    // A document containing constants; i.e. values that do not change once computed (e.g. $$NOW).
+    BSONObj letParameters;
 
 private:
     // Required fields.
@@ -352,10 +347,6 @@ private:
 
     // The explicit writeConcern for the operation or boost::none if the user did not specifiy one.
     boost::optional<WriteConcernOptions> _writeConcern;
-
-    // A document containing runtime constants; i.e. values that do not change once computed (e.g.
-    // $$NOW).
-    boost::optional<RuntimeConstants> _runtimeConstants;
 
     // All aggregation requests from mongos-4.4 set this flag, indicating that shard results should
     // use the updated sort key format when returning change stream results.

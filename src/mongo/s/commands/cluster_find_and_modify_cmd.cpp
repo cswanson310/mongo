@@ -58,16 +58,6 @@ namespace mongo {
 namespace {
 
 const ReadPreferenceSetting kPrimaryOnlyReadPreference(ReadPreference::PrimaryOnly);
-const char kRuntimeConstantsField[] = "runtimeConstants";
-
-BSONObj appendRuntimeConstantsToCommandObject(OperationContext* opCtx, const BSONObj& origCmdObj) {
-    uassert(51196,
-            "Cannot specify runtime constants option to a mongos",
-            !origCmdObj.getField(kRuntimeConstantsField));
-    auto rtcBSON =
-        BSON(kRuntimeConstantsField << Variables::generateRuntimeConstants(opCtx).toBSON());
-    return origCmdObj.addField(rtcBSON.getField(kRuntimeConstantsField));
-}
 
 BSONObj getCollation(const BSONObj& cmdObj) {
     BSONElement collationElement;
@@ -199,7 +189,8 @@ public:
         }
 
         const auto explainCmd = ClusterExplain::wrapAsExplain(
-            appendRuntimeConstantsToCommandObject(opCtx, cmdObj), verbosity);
+            cmdObj.addField(BSON("let" << Variables::generateTimeConstants(opCtx))["let"]),
+            verbosity);
 
         // Time how long it takes to run the explain command on the shard.
         Timer timer;
@@ -248,8 +239,8 @@ public:
         // that the parsing be pulled into this function.
         createShardDatabase(opCtx, nss.db());
 
-        // Append mongoS' runtime constants to the command object before forwarding it to the shard.
-        auto cmdObjForShard = appendRuntimeConstantsToCommandObject(opCtx, cmdObj);
+        auto cmdObjForShard =
+            cmdObj.addField(BSON("let" << Variables::generateTimeConstants(opCtx))["let"]);
 
         const auto routingInfo = uassertStatusOK(getCollectionRoutingInfoForTxnCmd(opCtx, nss));
         if (!routingInfo.cm()) {

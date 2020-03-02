@@ -57,6 +57,7 @@
 #include "mongo/db/ops/parsed_update.h"
 #include "mongo/db/ops/update_request.h"
 #include "mongo/db/ops/write_ops_retryability.h"
+#include "mongo/db/pipeline/variables.h"
 #include "mongo/db/query/collection_query_info.h"
 #include "mongo/db/query/explain.h"
 #include "mongo/db/query/find_and_modify_request.h"
@@ -121,8 +122,7 @@ void makeUpdateRequest(OperationContext* opCtx,
     requestOut->setProj(args.getFields());
     invariant(args.getUpdate());
     requestOut->setUpdateModification(*args.getUpdate());
-    requestOut->setRuntimeConstants(
-        args.getRuntimeConstants().value_or(Variables::generateRuntimeConstants(opCtx)));
+    requestOut->letParameters = Variables::generateTimeConstantsIfNeeded(opCtx, args.letParameters);
     requestOut->setSort(args.getSort());
     requestOut->setHint(args.getHint());
     requestOut->setCollation(args.getCollation());
@@ -143,8 +143,7 @@ void makeDeleteRequest(OperationContext* opCtx,
                        DeleteRequest* requestOut) {
     requestOut->setQuery(args.getQuery());
     requestOut->setProj(args.getFields());
-    requestOut->setRuntimeConstants(
-        args.getRuntimeConstants().value_or(Variables::generateRuntimeConstants(opCtx)));
+    requestOut->letParameters = Variables::generateTimeConstantsIfNeeded(opCtx, args.letParameters);
     requestOut->setSort(args.getSort());
     requestOut->setHint(args.getHint());
     requestOut->setCollation(args.getCollation());

@@ -133,19 +133,25 @@ public:
         return *_dbVersion;
     }
 
-    void setRuntimeConstants(RuntimeConstants runtimeConstants) {
+    void setLet(BSONObj let) {
         invariant(_updateReq);
-        _updateReq->setRuntimeConstants(std::move(runtimeConstants));
+        _updateReq->setLet(std::move(let));
     }
 
-    bool hasRuntimeConstants() const {
+    auto hasLet() const {
         invariant(_updateReq);
-        return _updateReq->getRuntimeConstants().has_value();
+        return _updateReq->getLet().has_value() || _updateReq->getRuntimeConstants().has_value();
     }
 
-    const boost::optional<RuntimeConstants>& getRuntimeConstants() const {
+    auto getLet() const {
         invariant(_updateReq);
-        return _updateReq->getRuntimeConstants();
+        if (!(_updateReq->getLet().has_value() || _updateReq->getRuntimeConstants().has_value()))
+            return boost::optional<BSONObj>{};
+        else
+            return boost::optional<BSONObj>{
+                BSONObjBuilder{_updateReq->getLet().value_or(BSONObj{})}
+                    .appendElementsUnique(_updateReq->getRuntimeConstants().value_or(BSONObj{}))
+                    .obj()};
     }
 
     const write_ops::WriteCommandBase& getWriteCommandBase() const;
