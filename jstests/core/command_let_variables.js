@@ -114,20 +114,134 @@ result = db.runCommand({
 });
 assert.eq(result.value, {Species: "not_a_bird", suspect: "dino"}, result);
 // delete
-assert.commandWorked(coll.insert({Species: "not_a_bird"}));
-result = assert.commandWorked(db.runCommand({
-    delete: coll.getName(),
-    let : {target_species: "not_a_bird"},
-    deletes: [{
-        q: {$expr: {$eq: ["$Species", "$$target_species"]}},
-    }]
-}));
+// result = assert.commandWorked(db.runCommand({
+// delete: coll.getName(),
+// let : {target_species: "not_a_bird"},
+// deletes: [{
+// q: {$expr: {$eq: ["$Species", "$$target_species"]}},
+// limit: 0
+// }]
+// }));
 
 // update
 assert.commandWorked(db.runCommand({
     update: coll.getName(),
     let : {target_species: "Song Thrush (Turdus philomelos)", new_name: "Song Thrush"},
-    q: {$expr: {$eq: ["$Species", "$$target_species"]}},
-    u: [{$set: {Species: "$$new_name"}}]
+    updates: [
+        {q: {$expr: {$eq: ["$Species", "$$target_species"]}}, u: [{$set: {Species: "$$new_name"}}]}
+    ]
 }));
+
+// Test when the same variable is declared in the aggregate scope and $lookup scope.
+// Create a second collection to lookup into
+const lookup_coll = db.command_let_variables_lookup;
+assert.commandWorked(lookup_coll.insert({Species: "Song Thrush", color: "brown"}));
+assert.commandWorked(lookup_coll.insert({Species: "Chaffinch (Fringilla coelebs)", color: "red"}));
+result = assert.commandWorked(db.runCommand({
+    aggregate: coll.getName(),
+    let: {target_species: "Song Thrush", overlappedVal: true},
+    pipeline: [
+        {$lookup: {
+            from: lookup_coll.getName(),
+            let: {funFact: "string", overlappedVal: false},
+            pipeline: [
+                // Test access to aggregation variables
+                {$match: {$expr: {$eq: ["$Species", "$$target_species"]}}},
+                // Test access to pipeline variables, and overwritten variables
+                {$project: {Species: 1, color: 1, funfact: "$$funFact", val: "$$overlappedVal"}},
+            ],
+            as: "facts"
+        }},
+        {$match: {$expr: {$eq: ["$Species", "$$target_species"]}}},
+    ],
+    cursor: {}
+}));
+
+let lookup_results = result.cursor.firstBatch;
+print(tojson(lookup_results));
+// Make sure the match was applied to the correct species.
+assert.eq(lookup_results.length, 1, lookup_results);
+assert.eq(lookup_results[0].Species, "Song Thrush", lookup_results[0]);
+assert.eq(lookup_results[0].facts[0].val, false, lookup_results[0]);
+
+result = assert.commandFailedWithCode(db.runCommand({
+    aggregate: coll.getName(),
+    let: {target_species: "Song Thrush", overlappedVal: true},
+    pipeline: [
+        {$lookup: {
+            from: lookup_coll.getName(),
+            let: {funFact: "string", overlappedVal: false},
+            pipeline: [
+                // Test access to aggregation variables
+                {$match: {$expr: {$eq: ["$Species", "$$target_species"]}}},
+                // Test access to pipeline variables, and overwritten variables
+                {$project: {Species: 1, color: 1, funfact: "$$funFact", val: "$$overlappedVal"}},
+            ],
+            as: "facts"
+        }},
+        {$match: {$expr: {$eq: ["$Species", "$$target_species"]}}},
+        {$project: {bonusFact: "$$funFact"}}
+    ],
+    cursor: {}
+}), 17276);
+
+// Test that runTimeConstants and let are equivalent using find.
+result = assert
+             .commandWorked(db.runCommand({
+                 find: coll.getName(),
+                 runtimeConstants: {target_species: "Song Thrush"},
+                 filter: {$expr: {$eq: ["$Species", "$$target_species"]}},
+                 projection: {_id: 0}
+             }))
+             .cursor.firstBatch;
+expectedResults = {
+    Species: "Song Thrush",
+    population_trends: [
+        {term: {start: 1970, end: 2014}, pct_change: -53, annual: -1.7, trend: "weak decline"},
+        {term: {start: 2009, end: 2014}, pct_change: -4, annual: -0.88, trend: "no change"}
+    ]
+};
+
+assert.eq(result.length, 1);
+assert.eq(expectedResults, result[0]);
+
+// Test that if runtimeConstants and let are both specified, the later one wins.
+result = assert
+             .commandWorked(db.runCommand({
+                 find: coll.getName(),
+                 let : {target_species: "Song Thrush"},
+                 runtimeConstants: {target_species: "not_a_bird"},
+                 filter: {$expr: {$eq: ["$Species", "$$target_species"]}},
+                 projection: {_id: 0}
+             }))
+             .cursor.firstBatch;
+expectedResults = {
+    Species: "Song Thrush",
+    population_trends: [
+        {term: {start: 1970, end: 2014}, pct_change: -53, annual: -1.7, trend: "weak decline"},
+        {term: {start: 2009, end: 2014}, pct_change: -4, annual: -0.88, trend: "no change"}
+    ]
+};
+
+assert.eq(result.length, 1);
+assert.eq(expectedResults, result[0]);
+result = assert
+             .commandWorked(db.runCommand({
+                 find: coll.getName(),
+                 runtimeConstants: {target_species: "Song Thrush"},
+                 let : {target_species: "not_a_bird"},
+                 filter: {$expr: {$eq: ["$Species", "$$target_species"]}},
+                 projection: {_id: 0}
+             }))
+             .cursor.firstBatch;
+expectedResults = {
+    Species: "Song Thrush",
+    population_trends: [
+        {term: {start: 1970, end: 2014}, pct_change: -53, annual: -1.7, trend: "weak decline"},
+        {term: {start: 2009, end: 2014}, pct_change: -4, annual: -0.88, trend: "no change"}
+    ]
+};
+
+assert.eq(result.length, 1);
+assert.eq(expectedResults, result[0]);
 }());
