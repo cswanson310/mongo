@@ -231,8 +231,9 @@ std::unique_ptr<sbe::PlanStage> SlotBasedStageBuilder::buildSort(const QuerySolu
         // Slot holding the sort key.
         auto sortFieldVar{_slotIdGenerator.generate()};
         orderBy.push_back(sortFieldVar);
-        direction.push_back(part.isAscending ? sbe::value::SortDirection::Ascending
-                                             : sbe::value::SortDirection::Descending);
+        direction.push_back(part.direction == SortDirection::kAscending
+                                ? sbe::value::SortDirection::Ascending
+                                : sbe::value::SortDirection::Descending);
 
         // Generate projection to get the value of the sort key. Ideally, this should be
         // tracked by a 'reference tracker' at higher level.

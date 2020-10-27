@@ -37,6 +37,7 @@
 #include "mongo/db/exec/document_value/document_metadata_fields.h"
 #include "mongo/db/pipeline/expression.h"
 #include "mongo/db/pipeline/field_path.h"
+#include "mongo/db/query/sort_direction.h"
 #include "mongo/util/visit_helper.h"
 
 namespace mongo::cst_sort_translation {
@@ -60,14 +61,14 @@ SortPattern translateSortSpec(const CNode& cst,
                     switch (keyVal) {
                         case KeyValue::randVal:
                             sortKeys.push_back(SortPattern::SortPatternPart{
-                                false,
+                                SortDirection::kDescending,
                                 boost::none,
                                 make_intrusive<ExpressionMeta>(expCtx.get(),
                                                                DocumentMetadataFields::kRandVal)});
                             break;
                         case KeyValue::textScore:
                             sortKeys.push_back(SortPattern::SortPatternPart{
-                                false,
+                                SortDirection::kDescending,
                                 boost::none,
                                 make_intrusive<ExpressionMeta>(
                                     expCtx.get(), DocumentMetadataFields::kTextScore)});
@@ -82,16 +83,20 @@ SortPattern translateSortSpec(const CNode& cst,
                         case KeyValue::longOneKey:
                         case KeyValue::doubleOneKey:
                         case KeyValue::decimalOneKey:
-                            sortKeys.push_back(SortPattern::SortPatternPart{
-                                true, FieldPath{std::move(path)}, nullptr /* meta */});
+                            sortKeys.push_back(
+                                SortPattern::SortPatternPart{SortDirection::kAscending,
+                                                             FieldPath{std::move(path)},
+                                                             nullptr /* meta */});
 
                             break;
                         case KeyValue::intNegOneKey:
                         case KeyValue::longNegOneKey:
                         case KeyValue::doubleNegOneKey:
                         case KeyValue::decimalNegOneKey:
-                            sortKeys.push_back(SortPattern::SortPatternPart{
-                                false, FieldPath{std::move(path)}, nullptr /* meta */});
+                            sortKeys.push_back(
+                                SortPattern::SortPatternPart{SortDirection::kDescending,
+                                                             FieldPath{std::move(path)},
+                                                             nullptr /* meta */});
                             break;
                         default:
                             MONGO_UNREACHABLE;

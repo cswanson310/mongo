@@ -33,6 +33,7 @@
 #include "mongo/db/exec/document_value/document.h"
 #include "mongo/db/pipeline/document_path_support.h"
 #include "mongo/db/pipeline/expression.h"
+#include "mongo/db/query/sort_direction.h"
 
 namespace mongo {
 class SortPattern {
@@ -43,20 +44,30 @@ public:
         kForSortKeyMerging,
     };
 
+
     // Represents one of the components in a compound sort pattern. Each component is either the
     // field path by which we are sorting, or an Expression which can be used to retrieve the sort
     // value in the case of a $meta-sort (but not both).
     struct SortPatternPart {
-        bool isAscending = true;
+        SortDirection direction = SortDirection::kAscending;
         boost::optional<FieldPath> fieldPath;
         boost::intrusive_ptr<ExpressionMeta> expression;
 
+        SortPatternPart() {}
+        SortPatternPart(SortDirection direction,
+                        boost::optional<FieldPath> fieldPath,
+                        boost::intrusive_ptr<ExpressionMeta> expression)
+            : direction(direction),
+              fieldPath(std::move(fieldPath)),
+              expression(std::move(expression)) {}
+
         bool operator==(const SortPatternPart& other) const {
-            return isAscending == other.isAscending && fieldPath == other.fieldPath &&
+            return direction == other.direction && fieldPath == other.fieldPath &&
                 expression == other.expression;
         }
     };
 
+    SortPattern() {}
     SortPattern(const BSONObj&, const boost::intrusive_ptr<ExpressionContext>&);
 
     SortPattern(std::vector<SortPatternPart> patterns) : _sortPattern(std::move(patterns)) {

@@ -69,7 +69,7 @@ SortPattern::SortPattern(const BSONObj& obj,
 
             // If sorting by textScore, sort highest scores first. If sorting by randVal, order
             // doesn't matter, so just always use descending.
-            patternPart.isAscending = false;
+            patternPart.direction = SortDirection::kDescending;
 
             _sortPattern.push_back(std::move(patternPart));
             continue;
@@ -86,7 +86,8 @@ SortPattern::SortPattern(const BSONObj& obj,
                 ((direction == 1) || (direction == -1)));
 
         patternPart.fieldPath = FieldPath{fieldName};
-        patternPart.isAscending = (direction > 0);
+        patternPart.direction =
+            direction > 0 ? SortDirection::kAscending : SortDirection::kDescending;
         _paths.insert(patternPart.fieldPath->fullPath());
         _sortPattern.push_back(std::move(patternPart));
     }
@@ -110,7 +111,7 @@ Document SortPattern::serialize(SortKeySerialization serializationMode) const {
         if (_sortPattern[i].fieldPath) {
             // Append a named integer based on whether the sort is ascending/descending.
             keyObj.setField(_sortPattern[i].fieldPath->fullPath(),
-                            Value(_sortPattern[i].isAscending ? 1 : -1));
+                            Value(_sortPattern[i].direction == SortDirection::kAscending ? 1 : -1));
         } else {
             // Sorting by an expression, use a made up field name.
             auto computedFieldName = std::string(str::stream() << "$computed" << i);

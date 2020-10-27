@@ -1,5 +1,5 @@
 /**
- *    Copyright (C) 2019-present MongoDB, Inc.
+ *    Copyright (C) 2020-present MongoDB, Inc.
  *
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the Server Side Public License, version 1,
@@ -29,30 +29,6 @@
 
 #pragma once
 
-#include <vector>
-
-#include "mongo/db/exec/document_value/value.h"
-#include "mongo/db/query/sort_direction.h"
-#include "mongo/db/query/sort_pattern.h"
-
 namespace mongo {
-
-/**
- * This class is used to compare "sort keys," which are the values used to determine the order of
- * documents returned by a query that requests a sort. When executing a query with a blocking sort,
- * a SortKeyGenerator stage creates a sort key for each document based on the requested sort
- * pattern, and a sort stage orders the documents using the sort keys and this comparator.
- */
-class SortKeyComparator {
-public:
-    SortKeyComparator(const SortPattern& sortPattern);
-    SortKeyComparator(const BSONObj& sortPattern);
-    int operator()(const Value& lhsKey, const Value& rhsKey) const;
-
-private:
-    // The comparator does not need the entire sort pattern, just the sort direction for each
-    // component.
-    std::vector<SortDirection> _pattern;
-};
-
+enum class SortDirection { kDescending, kAscending };
 }  // namespace mongo
