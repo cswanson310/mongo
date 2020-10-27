@@ -36,10 +36,7 @@ SortKeyComparator::SortKeyComparator(const SortPattern& sortPattern) {
     std::transform(sortPattern.begin(),
                    sortPattern.end(),
                    std::back_inserter(_pattern),
-                   [](const SortPattern::SortPatternPart& part) {
-                       return part.isAscending ? SortDirection::kAscending
-                                               : SortDirection::kDescending;
-                   });
+                   [](const SortPattern::SortPatternPart& part) { return part.direction; });
 }
 
 int SortKeyComparator::operator()(const Value& lhsKey, const Value& rhsKey) const {
