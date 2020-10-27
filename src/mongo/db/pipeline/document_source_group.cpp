@@ -172,18 +172,21 @@ DocumentSource::GetNextResult DocumentSourceGroup::doGetNext() {
         invariant(initializationResult.isEOF());
     }
 
+    return unloadGroupedResult();
+}
+
+DocumentSource::GetNextResult DocumentSourceGroup::unloadGroupedResult(bool disposeIfFinished) {
     for (auto&& accum : _currentAccumulators) {
         accum->reset();  // Prep accumulators for a new group.
     }
-
     if (_spilled) {
-        return getNextSpilled();
+        return getNextSpilled(disposeIfFinished);
     } else {
-        return getNextStandard();
+        return getNextStandard(disposeIfFinished);
     }
 }
 
-DocumentSource::GetNextResult DocumentSourceGroup::getNextSpilled() {
+DocumentSource::GetNextResult DocumentSourceGroup::getNextSpilled(bool disposeIfFinished) {
     // We aren't streaming, and we have spilled to disk.
     if (!_sorterIterator)
         return GetNextResult::makeEOF();
@@ -218,7 +221,10 @@ DocumentSource::GetNextResult DocumentSourceGroup::getNextSpilled() {
         }
 
         if (!_sorterIterator->more()) {
-            dispose();
+            if (disposeIfFinished) {
+                dispose();
+            }
+            _sorterIterator.reset();
             break;
         }
 
@@ -228,15 +234,19 @@ DocumentSource::GetNextResult DocumentSourceGroup::getNextSpilled() {
     return makeDocument(_currentId, _currentAccumulators, pExpCtx->needsMerge);
 }
 
-DocumentSource::GetNextResult DocumentSourceGroup::getNextStandard() {
+DocumentSource::GetNextResult DocumentSourceGroup::getNextStandard(bool disposeIfFinished) {
     // Not spilled, and not streaming.
     if (_groups->empty())
         return GetNextResult::makeEOF();
 
-    Document out = makeDocument(groupsIterator->first, groupsIterator->second, pExpCtx->needsMerge);
+    const auto toExtract = _groupsIterator;
+    ++_groupsIterator;
+    auto extracted = _groups->extract(toExtract);
+    Document out = makeDocument(extracted.key(), extracted.mapped(), pExpCtx->needsMerge);
 
-    if (++groupsIterator == _groups->end())
+    if (_groupsIterator == _groups->end() && disposeIfFinished) {
         dispose();
+    }
 
     return out;
 }
@@ -247,7 +257,7 @@ void DocumentSourceGroup::doDispose() {
     _sorterIterator.reset();
 
     // Make us look done.
-    groupsIterator = _groups->end();
+    _groupsIterator = _groups->end();
 }
 
 Pipeline::SourceContainer::iterator DocumentSourceGroup::doOptimizeAt(
@@ -371,36 +381,30 @@ const std::vector<AccumulationStatement>& DocumentSourceGroup::getAccumulatedFie
     return _accumulatedFields;
 }
 
-intrusive_ptr<DocumentSourceGroup> DocumentSourceGroup::create(
-    const intrusive_ptr<ExpressionContext>& pExpCtx,
-    const boost::intrusive_ptr<Expression>& groupByExpression,
-    std::vector<AccumulationStatement> accumulationStatements,
-    boost::optional<size_t> maxMemoryUsageBytes) {
-    size_t memoryBytes = maxMemoryUsageBytes ? *maxMemoryUsageBytes
-                                             : internalDocumentSourceGroupMaxMemoryBytes.load();
-    intrusive_ptr<DocumentSourceGroup> groupStage(new DocumentSourceGroup(pExpCtx, memoryBytes));
-    groupStage->setIdExpression(groupByExpression);
-    for (auto&& statement : accumulationStatements) {
-        groupStage->addAccumulator(statement);
-    }
+DocumentSourceGroup::DocumentSourceGroup(const intrusive_ptr<ExpressionContext>& expCtx)
+    : DocumentSourceGroup(expCtx, nullptr, {}) {}
 
-    return groupStage;
-}
-
-DocumentSourceGroup::DocumentSourceGroup(const intrusive_ptr<ExpressionContext>& pExpCtx,
+DocumentSourceGroup::DocumentSourceGroup(const intrusive_ptr<ExpressionContext>& expCtx,
+                                         const boost::intrusive_ptr<Expression>& groupByExpression,
+                                         std::vector<AccumulationStatement> accumulationStatements,
                                          boost::optional<size_t> maxMemoryUsageBytes)
-    : DocumentSource(kStageName, pExpCtx),
+    : DocumentSource(kStageName, expCtx),
+      _groups(expCtx->getValueComparator().makeUnorderedValueMap<Accumulators>()),
       _usedDisk(false),
       _doingMerge(false),
-      _memoryTracker{pExpCtx->allowDiskUse && !pExpCtx->inMongos,
+      _memoryTracker{expCtx->allowDiskUse && !expCtx->inMongos,
                      maxMemoryUsageBytes ? *maxMemoryUsageBytes
                                          : internalDocumentSourceGroupMaxMemoryBytes.load()},
       _initialized(false),
-      _groups(pExpCtx->getValueComparator().makeUnorderedValueMap<Accumulators>()),
       _spilled(false) {
-    if (!pExpCtx->inMongos && (pExpCtx->allowDiskUse || kDebugBuild)) {
+    setIdExpression(groupByExpression);
+    for (auto&& statement : accumulationStatements) {
+        addAccumulator(statement);
+    }
+
+    if (!expCtx->inMongos && (expCtx->allowDiskUse || kDebugBuild)) {
         // We spill to disk in debug mode, regardless of allowDiskUse, to stress the system.
-        _fileName = pExpCtx->tempDir + "/" + nextFileName();
+        _fileName = expCtx->tempDir + "/" + nextFileName();
     }
 }
 
@@ -464,21 +468,21 @@ void DocumentSourceGroup::setIdExpression(const boost::intrusive_ptr<Expression>
 }
 
 intrusive_ptr<DocumentSource> DocumentSourceGroup::createFromBson(
-    BSONElement elem, const intrusive_ptr<ExpressionContext>& pExpCtx) {
+    BSONElement elem, const intrusive_ptr<ExpressionContext>& expCtx) {
     uassert(15947, "a group's fields must be specified in an object", elem.type() == Object);
 
-    intrusive_ptr<DocumentSourceGroup> pGroup(new DocumentSourceGroup(pExpCtx));
+    intrusive_ptr<DocumentSourceGroup> pGroup(new DocumentSourceGroup(expCtx));
 
     BSONObj groupObj(elem.Obj());
     BSONObjIterator groupIterator(groupObj);
-    VariablesParseState vps = pExpCtx->variablesParseState;
+    VariablesParseState vps = expCtx->variablesParseState;
     while (groupIterator.more()) {
         BSONElement groupField(groupIterator.next());
         StringData pFieldName = groupField.fieldNameStringData();
         if (pFieldName == "_id") {
             uassert(
                 15948, "a group's _id may only be specified once", pGroup->_idExpressions.empty());
-            pGroup->setIdExpression(parseIdExpression(pExpCtx, groupField, vps));
+            pGroup->setIdExpression(parseIdExpression(expCtx, groupField, vps));
             invariant(!pGroup->_idExpressions.empty());
         } else if (pFieldName == "$doingMerge") {
             massert(17030, "$doingMerge should be true if present", groupField.Bool());
@@ -487,7 +491,7 @@ intrusive_ptr<DocumentSource> DocumentSourceGroup::createFromBson(
         } else {
             // Any other field will be treated as an accumulator specification.
             pGroup->addAccumulator(
-                AccumulationStatement::parseAccumulationStatement(pExpCtx.get(), groupField, vps));
+                AccumulationStatement::parseAccumulationStatement(expCtx.get(), groupField, vps));
         }
     }
 
@@ -526,72 +530,108 @@ private:
 };
 }  // namespace
 
-DocumentSource::GetNextResult DocumentSourceGroup::initialize() {
+void DocumentSourceGroup::insertToGroupsMap(Document&& rootDocument) {
+    if (_memoryTracker.shouldSpillWithAttemptToSaveMemory([this]() { return freeMemory(); })) {
+        _sortedFiles.push_back(spill());
+    }
+
+    // We release the result document here so that it does not outlive the end of this loop
+    // iteration. Not releasing could lead to an array copy when this group follows an unwind.
+    Value id = computeId(rootDocument);
     const size_t numAccumulators = _accumulatedFields.size();
 
+    // Look for the _id value in the map. If it's not there, add a new entry with a blank
+    // accumulator. This is done in a somewhat odd way in order to avoid hashing 'id' and
+    // looking it up in '_groups' multiple times.
+    const size_t oldSize = _groups->size();
+    vector<intrusive_ptr<AccumulatorState>>& group = (*_groups)[id];
+    const bool inserted = _groups->size() != oldSize;
+
+    if (inserted) {
+        _memoryTracker.memoryUsageBytes += id.getApproximateSize();
+
+        // Initialize and add the accumulators
+        Value expandedId = expandId(id);
+        Document idDoc =
+            expandedId.getType() == BSONType::Object ? expandedId.getDocument() : Document();
+        group.reserve(numAccumulators);
+        for (auto&& accumulatedField : _accumulatedFields) {
+            auto accum = accumulatedField.makeAccumulator();
+            Value initializerValue =
+                accumulatedField.expr.initializer->evaluate(idDoc, &pExpCtx->variables);
+            accum->startNewGroup(initializerValue);
+            group.push_back(accum);
+        }
+    } else {
+        for (auto&& groupObj : group) {
+            // subtract old mem usage. New usage added back after processing.
+            _memoryTracker.memoryUsageBytes -= groupObj->memUsageForSorter();
+        }
+    }
+
+    /* tickle all the accumulators for the group we found */
+    dassert(numAccumulators == group.size());
+
+    for (size_t i = 0; i < numAccumulators; i++) {
+        std::cout << "CHARLIE (accumulating)" << std::endl;
+        group[i]->process(
+            _accumulatedFields[i].expr.argument->evaluate(rootDocument, &pExpCtx->variables),
+            _doingMerge);
+
+        _memoryTracker.memoryUsageBytes += group[i]->memUsageForSorter();
+    }
+
+    if (kDebugBuild && !storageGlobalParams.readOnly) {
+        // In debug mode, spill every time we have a duplicate id to stress merge logic.
+        if (!inserted &&                     // is a dup
+            !pExpCtx->inMongos &&            // can't spill to disk in mongos
+            !_memoryTracker.allowDiskUse &&  // don't change behavior when testing external sort
+            _sortedFiles.size() < 20) {      // don't open too many FDs
+
+            _sortedFiles.push_back(spill());
+        }
+    }
+}
+
+void DocumentSourceGroup::markEndOfLoading() {
+    // Do any final steps necessary to prepare to output results.
+    if (!_sortedFiles.empty()) {
+        _spilled = true;
+        if (!_groups->empty()) {
+            _sortedFiles.push_back(spill());
+        }
+
+        // We won't be using groups again so free its memory.
+        _groups = pExpCtx->getValueComparator().makeUnorderedValueMap<Accumulators>();
+
+        _sorterIterator.reset(Sorter<Value, Value>::Iterator::merge(
+            _sortedFiles, SortOptions(), SorterComparator(pExpCtx->getValueComparator())));
+        _ownsFileDeletion = false;
+
+        // prepare current to accumulate data
+        _currentAccumulators.reserve(_accumulatedFields.size());
+        for (auto&& accumulatedField : _accumulatedFields) {
+            _currentAccumulators.push_back(accumulatedField.makeAccumulator());
+        }
+
+        verify(_sorterIterator->more());  // we put data in, we should get something out.
+        _firstPartOfNextGroup = _sorterIterator->next();
+    } else {
+        // start the group iterator
+        _groupsIterator = _groups->begin();
+    }
+
+    // This must happen last so that, unless control gets here, we will re-enter
+    // initialization after getting a GetNextResult::ResultState::kPauseExecution.
+    _initialized = true;
+}
+
+DocumentSource::GetNextResult DocumentSourceGroup::initialize() {
     // Barring any pausing, this loop exhausts 'pSource' and populates '_groups'.
     GetNextResult input = pSource->getNext();
 
     for (; input.isAdvanced(); input = pSource->getNext()) {
-        if (_memoryTracker.shouldSpillWithAttemptToSaveMemory([this]() { return freeMemory(); })) {
-            _sortedFiles.push_back(spill());
-        }
-
-        // We release the result document here so that it does not outlive the end of this loop
-        // iteration. Not releasing could lead to an array copy when this group follows an unwind.
-        auto rootDocument = input.releaseDocument();
-        Value id = computeId(rootDocument);
-
-        // Look for the _id value in the map. If it's not there, add a new entry with a blank
-        // accumulator. This is done in a somewhat odd way in order to avoid hashing 'id' and
-        // looking it up in '_groups' multiple times.
-        const size_t oldSize = _groups->size();
-        vector<intrusive_ptr<AccumulatorState>>& group = (*_groups)[id];
-        const bool inserted = _groups->size() != oldSize;
-
-        if (inserted) {
-            _memoryTracker.memoryUsageBytes += id.getApproximateSize();
-
-            // Initialize and add the accumulators
-            Value expandedId = expandId(id);
-            Document idDoc =
-                expandedId.getType() == BSONType::Object ? expandedId.getDocument() : Document();
-            group.reserve(numAccumulators);
-            for (auto&& accumulatedField : _accumulatedFields) {
-                auto accum = accumulatedField.makeAccumulator();
-                Value initializerValue =
-                    accumulatedField.expr.initializer->evaluate(idDoc, &pExpCtx->variables);
-                accum->startNewGroup(initializerValue);
-                group.push_back(accum);
-            }
-        } else {
-            for (auto&& groupObj : group) {
-                // subtract old mem usage. New usage added back after processing.
-                _memoryTracker.memoryUsageBytes -= groupObj->memUsageForSorter();
-            }
-        }
-
-        /* tickle all the accumulators for the group we found */
-        dassert(numAccumulators == group.size());
-
-        for (size_t i = 0; i < numAccumulators; i++) {
-            group[i]->process(
-                _accumulatedFields[i].expr.argument->evaluate(rootDocument, &pExpCtx->variables),
-                _doingMerge);
-
-            _memoryTracker.memoryUsageBytes += group[i]->memUsageForSorter();
-        }
-
-        if (kDebugBuild && !storageGlobalParams.readOnly) {
-            // In debug mode, spill every time we have a duplicate id to stress merge logic.
-            if (!inserted &&                     // is a dup
-                !pExpCtx->inMongos &&            // can't spill to disk in mongos
-                !_memoryTracker.allowDiskUse &&  // don't change behavior when testing external sort
-                _sortedFiles.size() < 20) {      // don't open too many FDs
-
-                _sortedFiles.push_back(spill());
-            }
-        }
+        insertToGroupsMap(input.releaseDocument());
     }
 
     switch (input.getStatus()) {
@@ -602,36 +642,7 @@ DocumentSource::GetNextResult DocumentSourceGroup::initialize() {
             return input;  // Propagate pause.
         }
         case DocumentSource::GetNextResult::ReturnStatus::kEOF: {
-            // Do any final steps necessary to prepare to output results.
-            if (!_sortedFiles.empty()) {
-                _spilled = true;
-                if (!_groups->empty()) {
-                    _sortedFiles.push_back(spill());
-                }
-
-                // We won't be using groups again so free its memory.
-                _groups = pExpCtx->getValueComparator().makeUnorderedValueMap<Accumulators>();
-
-                _sorterIterator.reset(Sorter<Value, Value>::Iterator::merge(
-                    _sortedFiles, SortOptions(), SorterComparator(pExpCtx->getValueComparator())));
-                _ownsFileDeletion = false;
-
-                // prepare current to accumulate data
-                _currentAccumulators.reserve(numAccumulators);
-                for (auto&& accumulatedField : _accumulatedFields) {
-                    _currentAccumulators.push_back(accumulatedField.makeAccumulator());
-                }
-
-                verify(_sorterIterator->more());  // we put data in, we should get something out.
-                _firstPartOfNextGroup = _sorterIterator->next();
-            } else {
-                // start the group iterator
-                groupsIterator = _groups->begin();
-            }
-
-            // This must happen last so that, unless control gets here, we will re-enter
-            // initialization after getting a GetNextResult::ResultState::kPauseExecution.
-            _initialized = true;
+            markEndOfLoading();
             return input;
         }
     }

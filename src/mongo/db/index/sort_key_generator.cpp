@@ -33,6 +33,7 @@
 
 #include "mongo/bson/bsonobj_comparator.h"
 #include "mongo/db/query/collation/collation_index_key.h"
+#include "mongo/db/query/sort_direction.h"
 #include "mongo/util/visit_helper.h"
 
 namespace mongo {
@@ -44,7 +45,8 @@ SortKeyGenerator::SortKeyGenerator(SortPattern sortPattern, const CollatorInterf
 
     for (auto&& part : _sortPattern) {
         if (part.fieldPath) {
-            btreeBob.append(part.fieldPath->fullPath(), part.isAscending ? 1 : -1);
+            btreeBob.append(part.fieldPath->fullPath(),
+                            part.direction == SortDirection::kAscending ? 1 : -1);
             ++nFields;
         }
     }

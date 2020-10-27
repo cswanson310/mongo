@@ -68,6 +68,7 @@ static const char* const ns = "unittests.document_source_group_tests";
 
 // This provides access to getExpCtx(), but we'll use a different name for this test suite.
 using DocumentSourceGroupTest = AggregationContextFixture;
+using DocumentSourceSemiStreamingGroupTest = AggregationContextFixture;
 
 TEST_F(DocumentSourceGroupTest, ShouldBeAbleToPauseLoading) {
     auto expCtx = getExpCtx();
@@ -242,6 +243,163 @@ TEST_F(DocumentSourceGroupTest, ShouldNotReportDottedGroupKeyAsARename) {
     ASSERT(modifiedPathsRet.type == DocumentSource::GetModPathsReturn::Type::kAllExcept);
     ASSERT_EQ(modifiedPathsRet.paths.size(), 0UL);
     ASSERT_EQ(modifiedPathsRet.renames.size(), 0UL);
+}
+
+TEST_F(DocumentSourceSemiStreamingGroupTest, ShouldStreamResultsInEasyCase) {
+    auto expCtx = getExpCtx();
+    auto&& parser = AccumulationStatement::getParser("$sum", boost::none);
+    auto accumulatorArg = BSON("" << 1);
+    auto accExpr = parser(expCtx.get(), accumulatorArg.firstElement(), expCtx->variablesParseState);
+    AccumulationStatement countStatement{"count", accExpr};
+    auto groupKeyExpression =
+        ExpressionFieldPath::createPathFromString(expCtx.get(), "a", expCtx->variablesParseState);
+    auto semiStreamingGroup =
+        DocumentSourceSemiStreamingGroup::create(expCtx,
+                                                 groupKeyExpression,
+                                                 {{groupKeyExpression, SortDirection::kAscending}},
+                                                 {countStatement});
+    auto mock = DocumentSourceMock::createForTest({Document{{"a", 1}},
+                                                   Document{{"a", 1}},
+                                                   Document{{"a", 1}},
+                                                   Document{{"a", 2}},
+                                                   Document{{"a", 2}},
+                                                   Document{{"a", 3}}},
+                                                  expCtx);
+    semiStreamingGroup->setSource(mock.get());
+
+    // There were 3 pauses, so we should expect 3 paused results before any results can be returned.
+    auto result = semiStreamingGroup->getNext();
+    ASSERT_TRUE(result.isAdvanced());
+    ASSERT_DOCUMENT_EQ(result.releaseDocument(), (Document{{"_id", 1}, {"count", 3}}));
+    // We should be streaming. Just consumed the first 2 before realizing the groups switched. That
+    // leaves two documents left in the queue.
+    ASSERT_EQ(mock->size(), 2UL);
+
+    result = semiStreamingGroup->getNext();
+    ASSERT_TRUE(result.isAdvanced());
+    ASSERT_DOCUMENT_EQ(result.releaseDocument(), (Document{{"_id", 2}, {"count", 2}}));
+
+    result = semiStreamingGroup->getNext();
+    ASSERT_TRUE(result.isAdvanced());
+    ASSERT_DOCUMENT_EQ(result.releaseDocument(), (Document{{"_id", 3}, {"count", 1}}));
+
+    ASSERT_TRUE(semiStreamingGroup->getNext().isEOF());
+    ASSERT_TRUE(semiStreamingGroup->getNext().isEOF());
+    ASSERT_TRUE(semiStreamingGroup->getNext().isEOF());
+}
+
+TEST_F(DocumentSourceSemiStreamingGroupTest, ShouldStreamResultsMixedWithArrays) {
+    auto expCtx = getExpCtx();
+    auto&& parser = AccumulationStatement::getParser("$sum", boost::none);
+    auto accumulatorArg = BSON("" << 1);
+    auto accExpr = parser(expCtx.get(), accumulatorArg.firstElement(), expCtx->variablesParseState);
+    AccumulationStatement countStatement{"count", accExpr};
+    auto groupKeyExpression =
+        ExpressionFieldPath::createPathFromString(expCtx.get(), "a", expCtx->variablesParseState);
+    auto semiStreamingGroup =
+        DocumentSourceSemiStreamingGroup::create(expCtx,
+                                                 groupKeyExpression,
+                                                 {{groupKeyExpression, SortDirection::kAscending}},
+                                                 {countStatement});
+    auto mock = DocumentSourceMock::createForTest({Document{{"a", 1}},
+                                                   Document{{"a", {1}}},
+                                                   Document{{"a", 1}},
+                                                   Document{{"a", {1, 2}}},
+                                                   Document{{"a", {1}}},
+                                                   Document{{"a", 2}},
+                                                   Document{{"a", {2}}},
+                                                   Document{{"a", 2}},
+                                                   Document{{"a", {2}}},
+                                                   Document{{"a", {2, 3}}},
+                                                   Document{{"a", {3}}},
+                                                   Document{{"a", 3}}},
+                                                  expCtx);
+    semiStreamingGroup->setSource(mock.get());
+
+    // There were 3 pauses, so we should expect 3 paused results before any results can be returned.
+    auto result = semiStreamingGroup->getNext();
+    ASSERT_TRUE(result.isAdvanced());
+    // We should be streaming. Just consumed the first group which have a sort key of 1 and the
+    // first document of the next group. That leaves 6.
+    ASSERT_EQ(mock->size(), 6UL);
+    auto expectedGroups = ValueComparator::kInstance.makeUnorderedValueMap<int>();
+    expectedGroups[Value(1)] = 2;
+    expectedGroups[ImplicitValue(std::vector{1})] = 2;
+    expectedGroups[ImplicitValue(std::vector{1, 2})] = 1;
+    auto thisResult = result.releaseDocument();
+    auto match = expectedGroups.find(thisResult["_id"]);
+    ASSERT(match != expectedGroups.end());
+    ASSERT_DOCUMENT_EQ(thisResult, (Document{{"_id", match->first}, {"count", match->second}}));
+
+    result = semiStreamingGroup->getNext();
+    ASSERT_TRUE(result.isAdvanced());
+    ASSERT_EQ(mock->size(), 6UL);
+    thisResult = result.releaseDocument();
+    match = expectedGroups.find(thisResult["_id"]);
+    ASSERT(match != expectedGroups.end());
+    ASSERT_DOCUMENT_EQ(thisResult, (Document{{"_id", match->first}, {"count", match->second}}));
+
+    result = semiStreamingGroup->getNext();
+    ASSERT_TRUE(result.isAdvanced());
+    ASSERT_EQ(mock->size(), 6UL);
+    thisResult = result.releaseDocument();
+    match = expectedGroups.find(thisResult["_id"]);
+    ASSERT(match != expectedGroups.end());
+    ASSERT_DOCUMENT_EQ(thisResult, (Document{{"_id", match->first}, {"count", match->second}}));
+
+    // Moving to next group with 2 as the sort key.
+    result = semiStreamingGroup->getNext();
+    ASSERT_TRUE(result.isAdvanced());
+    ASSERT_EQ(mock->size(), 1UL);
+    expectedGroups = ValueComparator::kInstance.makeUnorderedValueMap<int>();
+    expectedGroups[ImplicitValue(2)] = 2;
+    expectedGroups[ImplicitValue(std::vector{2})] = 2;
+    expectedGroups[ImplicitValue(std::vector{2, 3})] = 1;
+    thisResult = result.releaseDocument();
+    match = expectedGroups.find(thisResult["_id"]);
+    ASSERT(match != expectedGroups.end());
+    ASSERT_DOCUMENT_EQ(thisResult, (Document{{"_id", match->first}, {"count", match->second}}));
+
+    result = semiStreamingGroup->getNext();
+    ASSERT_TRUE(result.isAdvanced());
+    ASSERT_EQ(mock->size(), 1UL);
+    thisResult = result.releaseDocument();
+    match = expectedGroups.find(thisResult["_id"]);
+    ASSERT(match != expectedGroups.end());
+    ASSERT_DOCUMENT_EQ(thisResult, (Document{{"_id", match->first}, {"count", match->second}}));
+
+    result = semiStreamingGroup->getNext();
+    ASSERT_TRUE(result.isAdvanced());
+    ASSERT_EQ(mock->size(), 1UL);
+    thisResult = result.releaseDocument();
+    match = expectedGroups.find(thisResult["_id"]);
+    ASSERT(match != expectedGroups.end());
+    ASSERT_DOCUMENT_EQ(thisResult, (Document{{"_id", match->first}, {"count", match->second}}));
+
+    // Moving to next group with 3 as the sort key.
+    result = semiStreamingGroup->getNext();
+    ASSERT_TRUE(result.isAdvanced());
+    ASSERT_EQ(mock->size(), 0UL);
+    expectedGroups = ValueComparator::kInstance.makeUnorderedValueMap<int>();
+    expectedGroups[ImplicitValue(3)] = 1;
+    expectedGroups[ImplicitValue(std::vector{3})] = 1;
+
+    thisResult = result.releaseDocument();
+    match = expectedGroups.find(thisResult["_id"]);
+    ASSERT(match != expectedGroups.end());
+    ASSERT_DOCUMENT_EQ(thisResult, (Document{{"_id", match->first}, {"count", match->second}}));
+
+    result = semiStreamingGroup->getNext();
+    ASSERT_TRUE(result.isAdvanced());
+    ASSERT_EQ(mock->size(), 0UL);
+    thisResult = result.releaseDocument();
+    match = expectedGroups.find(thisResult["_id"]);
+    ASSERT(match != expectedGroups.end());
+    ASSERT_DOCUMENT_EQ(thisResult, (Document{{"_id", match->first}, {"count", match->second}}));
+
+    ASSERT_TRUE(semiStreamingGroup->getNext().isEOF());
+    ASSERT_TRUE(semiStreamingGroup->getNext().isEOF());
+    ASSERT_TRUE(semiStreamingGroup->getNext().isEOF());
 }
 
 BSONObj toBson(const intrusive_ptr<DocumentSource>& source) {
