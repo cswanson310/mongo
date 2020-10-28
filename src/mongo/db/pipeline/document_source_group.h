@@ -292,6 +292,9 @@ private:
      */
     bool pathIncludedInGroupKeys(const std::string& dottedPath) const;
 
+    boost::intrusive_ptr<DocumentSourceSemiStreamingGroup> attemptToReplaceWithSemiStreaming(
+        const Sorts& sorts);
+
     bool _usedDisk;  // Keeps track of whether this $group spilled to disk.
     bool _doingMerge;
 

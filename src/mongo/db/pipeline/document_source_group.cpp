@@ -260,6 +260,45 @@ void DocumentSourceGroup::doDispose() {
     _groupsIterator = _groups->end();
 }
 
+boost::intrusive_ptr<DocumentSourceSemiStreamingGroup>
+DocumentSourceGroup::attemptToReplaceWithSemiStreaming(const DocumentSource::Sorts& sorts) {
+    for (auto&& sortCandidate : sorts.sorts) {
+        if (std::any_of(
+                sortCandidate.begin(), sortCandidate.end(), [this](const SortPatternPart& part) {
+                    return part.fieldPath && pathIncludedInGroupKeys(part.fieldPath->fullPath());
+                })) {
+            // We know at least one of the group keys is sorted, so we can convert to a
+            // semi-streaming implementation.
+            std::vector<DocumentSourceSemiStreamingGroup::GroupByPart> groupKeys;
+            for (auto&& idExp : _idExpressions) {
+                if (auto fieldExp = dynamic_cast<ExpressionFieldPath*>(idExp.get())) {
+                    bool wasSortedPath = false;
+                    for (auto&& partOfCompoundSort : sortCandidate) {
+                        const auto dottedPath = partOfCompoundSort.fieldPath->fullPath();
+                        if (!partOfCompoundSort.fieldPath) {
+                            continue;  // TODO meta and expression sorts.
+                        }
+                        if (fieldExp->representsPath(dottedPath)) {
+                            wasSortedPath = true;
+                            groupKeys.emplace(fieldExp, partOfCompoundSort.direction);
+                            break;
+                        }
+                    }
+                    if (!wasSortedPath) {
+                        groupKeys.emplace(idExp, boost::none);
+                    }
+                } else {
+                    // Not a field path expression. TODO see if it truncates a sort or otherwise
+                    // preserves. For now, just add it unsorted.
+                    groupKeys.emplace_back(idExp, boost::none);
+                }
+            }
+            // TODO: need a constructor with _idExpressions not the one big expression which we
+            // decomposed
+            return DocumentSourceSemiStreamingGroup::create();
+        }
+    }
+}
 Pipeline::SourceContainer::iterator DocumentSourceGroup::doOptimizeAt(
     Pipeline::SourceContainer::iterator itr, Pipeline::SourceContainer* container) {
 
@@ -267,8 +306,9 @@ Pipeline::SourceContainer::iterator DocumentSourceGroup::doOptimizeAt(
     if (itr != begin) {
         auto prev = std::prev(itr);
         auto sorts = (*prev)->getOutputSorts(begin, prev);
-        for (auto s : sorts.sorts) {
-            _inputSorts.sorts.insert(s);
+        if (auto semiStreamingGroup = attemptToReplaceWithSemiStreaming(sorts)) {
+            auto nextItr = container->erase(itr);
+            container->insert(nextItr, semiStreamingGroup);
         }
     }
     return std::next(itr);
