@@ -190,8 +190,8 @@ public:
     std::unique_ptr<GroupFromFirstDocumentTransformation> rewriteGroupAsTransformOnFirstDocument()
         const;
 
-    Pipeline::SourceContainer::iterator doOptimizeAt(
-        Pipeline::SourceContainer::iterator itr, Pipeline::SourceContainer* container) final;
+    Pipeline::SourceContainer::iterator doOptimizeAt(Pipeline::SourceContainer::iterator itr,
+                                                     Pipeline::SourceContainer* container) final;
 
 protected:
     GetNextResult doGetNext() override;

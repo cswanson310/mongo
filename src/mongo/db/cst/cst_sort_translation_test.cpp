@@ -53,7 +53,7 @@ auto getExpCtx() {
 
 void assertSortPatternsEQ(SortPattern correct, SortPattern fromTest) {
     for (size_t i = 0; i < correct.size(); ++i) {
-        ASSERT_EQ(correct[i].isAscending, fromTest[i].isAscending);
+        ASSERT_EQ(correct[i].direction, fromTest[i].direction);
         if (correct[i].fieldPath) {
             if (fromTest[i].fieldPath) {
                 ASSERT_EQ(correct[i].fieldPath->fullPath(), fromTest[i].fieldPath->fullPath());

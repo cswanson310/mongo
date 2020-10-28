@@ -267,10 +267,18 @@ Value DocumentSource::GetModPathsReturn::serialize() const {
     MutableDocument result;
 
     switch (type) {
-        case Type::kNotSupported: result["type"] = Value("kNotSupported"_sd); break;
-        case Type::kAllPaths: result["type"] = Value("kAllPaths"_sd); break;
-        case Type::kFiniteSet: result["type"] = Value("kFiniteSet"_sd); break;
-        case Type::kAllExcept: result["type"] = Value("kAllExcept"_sd); break;
+        case Type::kNotSupported:
+            result["type"] = Value("kNotSupported"_sd);
+            break;
+        case Type::kAllPaths:
+            result["type"] = Value("kAllPaths"_sd);
+            break;
+        case Type::kFiniteSet:
+            result["type"] = Value("kFiniteSet"_sd);
+            break;
+        case Type::kAllExcept:
+            result["type"] = Value("kAllExcept"_sd);
+            break;
     }
 
     std::vector<Value> paths;
@@ -329,7 +337,7 @@ std::set<SortPattern::SortPatternPart> renamePart(
 
             // Generate zero or more renamed Parts into result.
             for (auto renamedPath : renamedPaths) {
-                result.insert({part.isAscending, renamedPath, nullptr});
+                result.insert({part.direction, renamedPath, nullptr});
             }
         }
     }
@@ -342,12 +350,11 @@ std::set<SortPattern::SortPatternPart> renamePart(
 // To avoid the overhead of passing an extended copy of 'prefix' to each recursive call,
 // this function is allowed to modify 'prefix' in place, but it must undo its modifications
 // before returning.
-void renameInto(
-    std::vector<SortPattern::SortPatternPart>& prefix,
-    const SortPattern& original,
-    const std::map<FieldPath, std::vector<FieldPath>>& oldToNew,
-    bool keepOther,
-    DocumentSource::Sorts& result) {
+void renameInto(std::vector<SortPattern::SortPatternPart>& prefix,
+                const SortPattern& original,
+                const std::map<FieldPath, std::vector<FieldPath>>& oldToNew,
+                bool keepOther,
+                DocumentSource::Sorts& result) {
     size_t i = prefix.size();
     if (i == original.size()) {
         // All parts have been renamed.
@@ -367,8 +374,7 @@ void renameInto(
 }  // namespace
 
 DocumentSource::Sorts DocumentSource::Sorts::rename(
-    const std::map<FieldPath, std::vector<FieldPath>>& oldToNew,
-    bool keepOther) const {
+    const std::map<FieldPath, std::vector<FieldPath>>& oldToNew, bool keepOther) const {
     Sorts result;
     for (auto s : sorts) {
         // If s is {a, b, c}, and we rename b -> [x] and c -> [y, z],
