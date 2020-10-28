@@ -66,6 +66,7 @@ assert(resultsEq(res.toArray(), [{_id: {b: 1}}, {_id: {a: null, b: 1}}]));
 
 // Bug, see SERVER-23229.
 coll.createIndex({a: 1, b: 1});
+jsTestLog(coll.explain().aggregate({$sort: {a: 1, b: 1}}, {$group: {_id: {a: "$a", b: "$b"}}}));
 res = coll.aggregate({$sort: {a: 1, b: 1}}, {$group: {_id: {a: "$a", b: "$b"}}});
 assert(resultsEq(res.toArray(), [{_id: {a: null, b: 1}}]));
 

@@ -262,45 +262,65 @@ void DocumentSourceGroup::doDispose() {
 
 boost::intrusive_ptr<DocumentSourceSemiStreamingGroup>
 DocumentSourceGroup::attemptToReplaceWithSemiStreaming(const DocumentSource::Sorts& sorts) {
+    auto groupKeysWhichAreFieldPaths = [this]() {
+        std::vector<ExpressionFieldPath*> result;
+        for (auto&& idExp : _idExpressions) {
+            if (auto fieldExp = dynamic_cast<ExpressionFieldPath*>(idExp.get())) {
+                result.push_back(fieldExp);
+            }
+        }
+        return result;
+    }();
+    boost::optional<SortPattern> bestSort;
     for (auto&& sortCandidate : sorts.sorts) {
-        if (std::any_of(sortCandidate.begin(),
-                        sortCandidate.end(),
-                        [this](const SortPattern::SortPatternPart& part) {
-                            return part.fieldPath &&
-                                pathIncludedInGroupKeys(part.fieldPath->fullPath());
-                        })) {
-            // We know at least one of the group keys is sorted, so we can convert to a
-            // semi-streaming implementation.
-            std::vector<DocumentSourceSemiStreamingGroup::GroupByPart> groupKeys;
-            for (auto&& idExp : _idExpressions) {
-                if (auto fieldExp = dynamic_cast<ExpressionFieldPath*>(idExp.get())) {
-                    bool wasSortedPath = false;
-                    for (auto&& partOfCompoundSort : sortCandidate) {
-                        const auto dottedPath = partOfCompoundSort.fieldPath->fullPath();
-                        if (!partOfCompoundSort.fieldPath) {
-                            continue;  // TODO meta and expression sorts.
-                        }
-                        if (fieldExp->representsPath(dottedPath)) {
-                            wasSortedPath = true;
-                            groupKeys.emplace_back(idExp, partOfCompoundSort.direction);
-                            break;
-                        }
+        auto sortPartIsGrouped =
+            [groupKeysWhichAreFieldPaths](const SortPattern::SortPatternPart& part) {
+                return part.fieldPath &&
+                    std::any_of(groupKeysWhichAreFieldPaths.begin(),
+                                groupKeysWhichAreFieldPaths.end(),
+                                [part](auto* fieldPathExp) {
+                                    return fieldPathExp->representsPath(part.fieldPath->fullPath());
+                                });
+            };
+        if (std::all_of(sortCandidate.begin(), sortCandidate.end(), sortPartIsGrouped)) {
+            if (!bestSort || sortCandidate.size() > bestSort->size()) {
+                bestSort = sortCandidate;
+            }
+        }
+    }
+    if (bestSort) {
+        // We know at least one of the group keys is sorted, so we can convert to a
+        // semi-streaming implementation.
+        std::vector<DocumentSourceSemiStreamingGroup::GroupByPart> groupKeys;
+        for (auto&& idExp : _idExpressions) {
+            if (auto fieldExp = dynamic_cast<ExpressionFieldPath*>(idExp.get())) {
+                bool wasSortedPath = false;
+                for (auto&& partOfCompoundSort : *bestSort) {
+                    const auto dottedPath = partOfCompoundSort.fieldPath->fullPath();
+                    if (!partOfCompoundSort.fieldPath) {
+                        continue;  // TODO meta and expression sorts.
                     }
-                    if (!wasSortedPath) {
-                        groupKeys.emplace_back(idExp, boost::none);
+                    if (fieldExp->representsPath(dottedPath)) {
+                        wasSortedPath = true;
+                        groupKeys.emplace_back(idExp, partOfCompoundSort.direction);
+                        break;
                     }
-                } else {
-                    // Not a field path expression. TODO see if it truncates a sort or otherwise
-                    // preserves. For now, just add it unsorted.
+                }
+                if (!wasSortedPath) {
                     groupKeys.emplace_back(idExp, boost::none);
                 }
+            } else {
+                // Not a field path expression. TODO see if it truncates a sort or otherwise
+                // preserves. For now, just add it unsorted.
+                groupKeys.emplace_back(idExp, boost::none);
             }
-            return DocumentSourceSemiStreamingGroup::create(pExpCtx,
-                                                            std::move(_idFieldNames),
-                                                            std::move(groupKeys),
-                                                            std::move(_accumulatedFields),
-                                                            _memoryTracker.maxMemoryUsageBytes);
         }
+        return DocumentSourceSemiStreamingGroup::create(pExpCtx,
+                                                        std::move(_idFieldNames),
+                                                        std::move(sorts),
+                                                        std::move(groupKeys),
+                                                        std::move(_accumulatedFields),
+                                                        _memoryTracker.maxMemoryUsageBytes);
     }
     return nullptr;
 }
@@ -311,10 +331,11 @@ Pipeline::SourceContainer::iterator DocumentSourceGroup::doOptimizeAt(
     auto begin = container->begin();
     if (itr != begin) {
         auto prev = std::prev(itr);
-        auto sorts = (*prev)->getOutputSorts(begin, prev);
-        if (auto semiStreamingGroup = attemptToReplaceWithSemiStreaming(sorts)) {
+        _inputSorts = (*prev)->getOutputSorts(begin, prev);
+        if (auto semiStreamingGroup = attemptToReplaceWithSemiStreaming(_inputSorts)) {
             auto nextItr = container->erase(itr);
             container->insert(nextItr, semiStreamingGroup);
+            return nextItr;
         }
     }
     return std::next(itr);
@@ -438,14 +459,14 @@ DocumentSourceGroup::DocumentSourceGroup(
     boost::optional<size_t> maxMemoryUsageBytes)
     : DocumentSource(kStageName, expCtx),
       _accumulatedFields(std::move(accumulationStatements)),
+      _idFieldNames(std::move(idFieldNames)),
+      _idExpressions(std::move(idExpressions)),
       _groups(expCtx->getValueComparator().makeUnorderedValueMap<Accumulators>()),
       _usedDisk(false),
       _doingMerge(false),
       _memoryTracker{expCtx->allowDiskUse && !expCtx->inMongos,
                      maxMemoryUsageBytes ? *maxMemoryUsageBytes
                                          : internalDocumentSourceGroupMaxMemoryBytes.load()},
-      _idFieldNames(std::move(idFieldNames)),
-      _idExpressions(std::move(idExpressions)),
       _initialized(false) {
     if (!expCtx->inMongos && (expCtx->allowDiskUse || kDebugBuild)) {
         // We spill to disk in debug mode, regardless of allowDiskUse, to stress the system.
@@ -534,7 +555,6 @@ intrusive_ptr<DocumentSource> DocumentSourceGroup::createFromBson(
     uassert(15947, "a group's fields must be specified in an object", elem.type() == Object);
 
     intrusive_ptr<DocumentSourceGroup> pGroup(new DocumentSourceGroup(expCtx));
-    std::cout << "CHARLIE (group parse) " << pGroup->_idExpressions.size() << std::endl;
 
     BSONObj groupObj(elem.Obj());
     BSONObjIterator groupIterator(groupObj);
@@ -543,19 +563,8 @@ intrusive_ptr<DocumentSource> DocumentSourceGroup::createFromBson(
         BSONElement groupField(groupIterator.next());
         StringData pFieldName = groupField.fieldNameStringData();
         if (pFieldName == "_id") {
-            uassert(15948,
-                    str::stream() << "a group's _id may only be specified once"
-                                  << pGroup->_idExpressions.size(),
-                    /*
-                                  << [&]() -> std::string {
-                        str::stream ss;
-                        for (auto&& exp : pGroup->_idExpressions) {
-                            ss << exp->serialize(false).toString() << ", ";
-                        }
-                        return ss;
-                    }(),
-                    */
-                    pGroup->_idExpressions.empty());
+            uassert(
+                15948, "a group's _id may only be specified once", pGroup->_idExpressions.empty());
             pGroup->setIdExpression(parseIdExpression(expCtx, groupField, vps));
             invariant(!pGroup->_idExpressions.empty());
         } else if (pFieldName == "$doingMerge") {
@@ -646,7 +655,6 @@ void DocumentSourceGroup::insertToGroupsMap(Document&& rootDocument) {
     dassert(numAccumulators == group.size());
 
     for (size_t i = 0; i < numAccumulators; i++) {
-        std::cout << "CHARLIE (accumulating)" << std::endl;
         group[i]->process(
             _accumulatedFields[i].expr.argument->evaluate(rootDocument, &pExpCtx->variables),
             _doingMerge);

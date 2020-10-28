@@ -231,6 +231,9 @@ protected:
 
     std::vector<AccumulationStatement> _accumulatedFields;
 
+    std::vector<std::string> _idFieldNames;  // used when id is a document
+    std::vector<boost::intrusive_ptr<Expression>> _idExpressions;
+
     // We use boost::optional to defer initialization until the ExpressionContext containing the
     // correct comparator is injected, since the groups must be built using the comparator's
     // definition of equality.
@@ -238,6 +241,8 @@ protected:
 
     // Only used when '_spilled' is false.
     GroupsMap::iterator _groupsIterator;
+
+    DocumentSource::Sorts _inputSorts;
 
 private:
     struct MemoryUsageTracker {
@@ -316,9 +321,6 @@ private:
     std::streampos _nextSortedFileWriterOffset = 0;
     bool _ownsFileDeletion = true;  // unless a MergeIterator is made that takes over.
 
-    std::vector<std::string> _idFieldNames;  // used when id is a document
-    std::vector<boost::intrusive_ptr<Expression>> _idExpressions;
-
     bool _initialized;
 
     Value _currentId;
@@ -331,8 +333,6 @@ private:
     std::unique_ptr<Sorter<Value, Value>::Iterator> _sorterIterator;
 
     std::pair<Value, Value> _firstPartOfNextGroup;
-
-    DocumentSource::Sorts _inputSorts;
 };
 
 class FakeFieldNameGenerator {
@@ -361,11 +361,13 @@ public:
 
     static boost::intrusive_ptr<DocumentSourceSemiStreamingGroup> create(
         const boost::intrusive_ptr<ExpressionContext>& expCtx,
+        Sorts sorts,
         GroupByPart groupKey,
         std::vector<AccumulationStatement> accumulationStatements,
         boost::optional<size_t> maxMemoryUsageBytes = boost::none) {
         return create(expCtx,
                       {},
+                      std::move(sorts),
                       {std::move(groupKey)},
                       std::move(accumulationStatements),
                       maxMemoryUsageBytes);
@@ -373,11 +375,13 @@ public:
     static boost::intrusive_ptr<DocumentSourceSemiStreamingGroup> create(
         const boost::intrusive_ptr<ExpressionContext>& expCtx,
         std::vector<std::string> idFieldNames,
+        Sorts sorts,
         std::vector<GroupByPart> groupKeys,
         std::vector<AccumulationStatement> accumulationStatements,
         boost::optional<size_t> maxMemoryUsageBytes = boost::none) {
         return make_intrusive<DocumentSourceSemiStreamingGroup>(expCtx,
                                                                 std::move(idFieldNames),
+                                                                std::move(sorts),
                                                                 std::move(groupKeys),
                                                                 std::move(accumulationStatements),
                                                                 maxMemoryUsageBytes);
@@ -385,6 +389,7 @@ public:
 
     DocumentSourceSemiStreamingGroup(const boost::intrusive_ptr<ExpressionContext>& expCtx,
                                      std::vector<std::string> idFieldNames,
+                                     Sorts sorts,
                                      std::vector<GroupByPart> groupKeys,
                                      std::vector<AccumulationStatement> accumulationStatements,
                                      boost::optional<size_t> maxMemoryUsageBytes)
@@ -417,7 +422,9 @@ public:
                         "Should have at least one sorted input to use streaming group");
               return sortPatternParts;
           }()),
-          _sortKeyGen(_sortPattern, expCtx->getCollator()) {}
+          _sortKeyGen(_sortPattern, expCtx->getCollator()) {
+        _inputSorts = std::move(sorts);
+    }
 
     ~DocumentSourceSemiStreamingGroup() {}
 
@@ -429,11 +436,38 @@ public:
                                                      Pipeline::SourceContainer* container) final {
         return std::next(itr);
     }
-    /*
     Value serialize(boost::optional<ExplainOptions::Verbosity> explain = boost::none) const final {
-        return DocumentSourceGroup::serialize(explain);
+        auto normalSerialization = DocumentSourceGroup::serialize(explain);
+        if (!explain) {
+            return normalSerialization;
+        }
+        invariant(normalSerialization.getType() == BSONType::Object);
+        MutableDocument ammended(normalSerialization.getDocument());
+        if (_idFieldNames.empty()) {
+            invariant(_groupKeys.size() == 1);
+            auto groupKey = _groupKeys[0];
+            invariant(groupKey.sortDirection);
+            ammended.addField(
+                "streamingKeys",
+                Value(Document{
+                    {"_id", *groupKey.sortDirection == SortDirection::kAscending ? 1 : -1}}));
+        } else {
+            ammended.addField("streamingKeys", [this]() {
+                MutableDocument keysDoc;
+                auto fieldNameIt = _idFieldNames.begin();
+                for (auto&& key : _groupKeys) {
+                    if (key.sortDirection) {
+                        keysDoc.addField(
+                            "_id." + *fieldNameIt,
+                            *key.sortDirection == SortDirection::kAscending ? Value(1) : Value(-1));
+                    }
+                    ++fieldNameIt;
+                }
+                return keysDoc.freezeToValue();
+            }());
+        }
+        return ammended.freezeToValue();
     }
-    */
 
 protected:
     GetNextResult doGetNext() final {
@@ -452,7 +486,6 @@ protected:
             std::tie(next, readyResult) = processNewDocument(next.releaseDocument());
             if (readyResult) {
                 invariant(next.isEOF());
-                std::cout << "CHARLIE (ready) " << readyResult->toBson() << std::endl;
                 return std::move(*readyResult);
             }
         }
@@ -479,14 +512,11 @@ private:
                                        key.expression->evaluate(doc, &pExpCtx->variables));
             }
         }
-        std::cout << "CHARLIE (sort) " << mockForSorter.peek().toBson() << std::endl;
         return _sortKeyGen.computeSortKeyFromDocument(mockForSorter.freeze());
     }
 
     std::pair<GetNextResult, boost::optional<Document>> processNewDocument(Document&& nextResult) {
-        std::cout << "CHARLIE (input) " << nextResult.toBson() << std::endl;
         auto thisSortKey = getSortKeyForSortedGroupKeys(nextResult);
-        std::cout << "CHARLIE (sortKey) " << thisSortKey.toString() << std::endl;
         if (!_currentSortKey) {
             _currentSortKey = std::move(thisSortKey);
             insertToGroupsMap(std::move(nextResult));
@@ -513,15 +543,8 @@ private:
     GetNextResult releaseValuesFromMap() {
         auto nextResult = unloadGroupedResult(false);
         if (nextResult.isEOF() && _firstDocForNextGroup) {
-            std::cout << "CHARLIE (next group starting) " << _firstDocForNextGroup->toBson()
-                      << std::endl;
             insertToGroupsMap(std::move(*_firstDocForNextGroup));
             _firstDocForNextGroup = boost::none;
-        }
-        if (nextResult.isAdvanced()) {
-            std::cout << "CHARLIE (unloaded) " << nextResult.getDocument().toBson() << std::endl;
-        } else {
-            std::cout << "CHARLIE (unloaded nothing) " << std::endl;
         }
         return nextResult;
     }
