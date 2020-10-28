@@ -175,8 +175,8 @@ splitMatchByModifiedFields(const boost::intrusive_ptr<DocumentSourceMatch>& matc
  *   {$group: {_id: "$x"}}
  */
 bool groupMatchSwapVerified(const DocumentSourceMatch& nextMatch,
-                            const DocumentSourceGroup& thisGroup) {
-    if (thisGroup.getIdFields().size() != 1) {
+                            const DocumentSourceGroup* thisGroup) {
+    if (thisGroup->getIdFields().size() != 1) {
         return true;
     }
     return !expression::hasExistencePredicateOnPath(*(nextMatch.getMatchExpression()), "_id"_sd);
@@ -189,7 +189,7 @@ bool DocumentSource::pushMatchBefore(Pipeline::SourceContainer::iterator itr,
     auto nextMatch = dynamic_cast<DocumentSourceMatch*>((*std::next(itr)).get());
     auto thisGroup = dynamic_cast<DocumentSourceGroup*>(this);
     if (constraints().canSwapWithMatch && nextMatch && !nextMatch->isTextQuery() &&
-        (!thisGroup || groupMatchSwapVerified(*nextMatch, *thisGroup))) {
+        (!thisGroup || groupMatchSwapVerified(*nextMatch, thisGroup))) {
         // We're allowed to swap with a $match and the stage after us is a $match. Furthermore, the
         // $match does not contain a text search predicate, which we do not attempt to optimize
         // because such a $match must already be the first stage in the pipeline. We can attempt to

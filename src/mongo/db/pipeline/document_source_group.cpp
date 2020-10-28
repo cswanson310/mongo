@@ -263,10 +263,12 @@ void DocumentSourceGroup::doDispose() {
 boost::intrusive_ptr<DocumentSourceSemiStreamingGroup>
 DocumentSourceGroup::attemptToReplaceWithSemiStreaming(const DocumentSource::Sorts& sorts) {
     for (auto&& sortCandidate : sorts.sorts) {
-        if (std::any_of(
-                sortCandidate.begin(), sortCandidate.end(), [this](const SortPatternPart& part) {
-                    return part.fieldPath && pathIncludedInGroupKeys(part.fieldPath->fullPath());
-                })) {
+        if (std::any_of(sortCandidate.begin(),
+                        sortCandidate.end(),
+                        [this](const SortPattern::SortPatternPart& part) {
+                            return part.fieldPath &&
+                                pathIncludedInGroupKeys(part.fieldPath->fullPath());
+                        })) {
             // We know at least one of the group keys is sorted, so we can convert to a
             // semi-streaming implementation.
             std::vector<DocumentSourceSemiStreamingGroup::GroupByPart> groupKeys;
@@ -280,12 +282,12 @@ DocumentSourceGroup::attemptToReplaceWithSemiStreaming(const DocumentSource::Sor
                         }
                         if (fieldExp->representsPath(dottedPath)) {
                             wasSortedPath = true;
-                            groupKeys.emplace(fieldExp, partOfCompoundSort.direction);
+                            groupKeys.emplace_back(idExp, partOfCompoundSort.direction);
                             break;
                         }
                     }
                     if (!wasSortedPath) {
-                        groupKeys.emplace(idExp, boost::none);
+                        groupKeys.emplace_back(idExp, boost::none);
                     }
                 } else {
                     // Not a field path expression. TODO see if it truncates a sort or otherwise
@@ -293,12 +295,16 @@ DocumentSourceGroup::attemptToReplaceWithSemiStreaming(const DocumentSource::Sor
                     groupKeys.emplace_back(idExp, boost::none);
                 }
             }
-            // TODO: need a constructor with _idExpressions not the one big expression which we
-            // decomposed
-            return DocumentSourceSemiStreamingGroup::create();
+            return DocumentSourceSemiStreamingGroup::create(pExpCtx,
+                                                            std::move(_idFieldNames),
+                                                            std::move(groupKeys),
+                                                            std::move(_accumulatedFields),
+                                                            _memoryTracker.maxMemoryUsageBytes);
         }
     }
+    return nullptr;
 }
+
 Pipeline::SourceContainer::iterator DocumentSourceGroup::doOptimizeAt(
     Pipeline::SourceContainer::iterator itr, Pipeline::SourceContainer* container) {
 
@@ -424,29 +430,38 @@ const std::vector<AccumulationStatement>& DocumentSourceGroup::getAccumulatedFie
 DocumentSourceGroup::DocumentSourceGroup(const intrusive_ptr<ExpressionContext>& expCtx)
     : DocumentSourceGroup(expCtx, nullptr, {}) {}
 
-DocumentSourceGroup::DocumentSourceGroup(const intrusive_ptr<ExpressionContext>& expCtx,
-                                         const boost::intrusive_ptr<Expression>& groupByExpression,
-                                         std::vector<AccumulationStatement> accumulationStatements,
-                                         boost::optional<size_t> maxMemoryUsageBytes)
+DocumentSourceGroup::DocumentSourceGroup(
+    const intrusive_ptr<ExpressionContext>& expCtx,
+    std::vector<AccumulationStatement> accumulationStatements,
+    std::vector<std::string> idFieldNames,
+    std::vector<boost::intrusive_ptr<Expression>> idExpressions,
+    boost::optional<size_t> maxMemoryUsageBytes)
     : DocumentSource(kStageName, expCtx),
+      _accumulatedFields(std::move(accumulationStatements)),
       _groups(expCtx->getValueComparator().makeUnorderedValueMap<Accumulators>()),
       _usedDisk(false),
       _doingMerge(false),
       _memoryTracker{expCtx->allowDiskUse && !expCtx->inMongos,
                      maxMemoryUsageBytes ? *maxMemoryUsageBytes
                                          : internalDocumentSourceGroupMaxMemoryBytes.load()},
-      _initialized(false),
-      _spilled(false) {
-    setIdExpression(groupByExpression);
-    for (auto&& statement : accumulationStatements) {
-        addAccumulator(statement);
-    }
-
+      _idFieldNames(std::move(idFieldNames)),
+      _idExpressions(std::move(idExpressions)),
+      _initialized(false) {
     if (!expCtx->inMongos && (expCtx->allowDiskUse || kDebugBuild)) {
         // We spill to disk in debug mode, regardless of allowDiskUse, to stress the system.
         _fileName = expCtx->tempDir + "/" + nextFileName();
     }
 }
+
+DocumentSourceGroup::DocumentSourceGroup(const intrusive_ptr<ExpressionContext>& expCtx,
+                                         const boost::intrusive_ptr<Expression>& groupByExpression,
+                                         std::vector<AccumulationStatement> accumulationStatements,
+                                         boost::optional<size_t> maxMemoryUsageBytes)
+    : DocumentSourceGroup(expCtx,
+                          std::move(accumulationStatements),
+                          decomposeIdExpression(groupByExpression).first,
+                          decomposeIdExpression(groupByExpression).second,
+                          maxMemoryUsageBytes) {}
 
 DocumentSourceGroup::~DocumentSourceGroup() {
     if (_ownsFileDeletion) {
@@ -459,7 +474,6 @@ void DocumentSourceGroup::addAccumulator(AccumulationStatement accumulationState
 }
 
 namespace {
-
 intrusive_ptr<Expression> parseIdExpression(const intrusive_ptr<ExpressionContext>& expCtx,
                                             BSONElement groupField,
                                             const VariablesParseState& vps) {
@@ -488,7 +502,10 @@ intrusive_ptr<Expression> parseIdExpression(const intrusive_ptr<ExpressionContex
 
 }  // namespace
 
-void DocumentSourceGroup::setIdExpression(const boost::intrusive_ptr<Expression> idExpression) {
+std::pair<std::vector<std::string>, std::vector<boost::intrusive_ptr<Expression>>>
+DocumentSourceGroup::decomposeIdExpression(const boost::intrusive_ptr<Expression> idExpression) {
+    std::vector<boost::intrusive_ptr<Expression>> idExpressions;
+    std::vector<std::string> idFieldNames;
 
     if (auto object = dynamic_cast<ExpressionObject*>(idExpression.get())) {
         auto& childExpressions = object->getChildExpressions();
@@ -499,12 +516,17 @@ void DocumentSourceGroup::setIdExpression(const boost::intrusive_ptr<Expression>
         // in initialize(), instead group on the output of the raw expressions. The artificial
         // object will be created at the end in makeDocument() while outputting results.
         for (auto&& childExpPair : childExpressions) {
-            _idFieldNames.push_back(childExpPair.first);
-            _idExpressions.push_back(childExpPair.second);
+            idFieldNames.push_back(childExpPair.first);
+            idExpressions.push_back(childExpPair.second);
         }
-    } else {
-        _idExpressions.push_back(idExpression);
+    } else if (idExpression != nullptr) {
+        idExpressions.push_back(idExpression);
     }
+    return {std::move(idFieldNames), std::move(idExpressions)};
+}
+
+void DocumentSourceGroup::setIdExpression(const boost::intrusive_ptr<Expression> idExpression) {
+    std::tie(_idFieldNames, _idExpressions) = decomposeIdExpression(idExpression);
 }
 
 intrusive_ptr<DocumentSource> DocumentSourceGroup::createFromBson(
@@ -512,6 +534,7 @@ intrusive_ptr<DocumentSource> DocumentSourceGroup::createFromBson(
     uassert(15947, "a group's fields must be specified in an object", elem.type() == Object);
 
     intrusive_ptr<DocumentSourceGroup> pGroup(new DocumentSourceGroup(expCtx));
+    std::cout << "CHARLIE (group parse) " << pGroup->_idExpressions.size() << std::endl;
 
     BSONObj groupObj(elem.Obj());
     BSONObjIterator groupIterator(groupObj);
@@ -520,8 +543,19 @@ intrusive_ptr<DocumentSource> DocumentSourceGroup::createFromBson(
         BSONElement groupField(groupIterator.next());
         StringData pFieldName = groupField.fieldNameStringData();
         if (pFieldName == "_id") {
-            uassert(
-                15948, "a group's _id may only be specified once", pGroup->_idExpressions.empty());
+            uassert(15948,
+                    str::stream() << "a group's _id may only be specified once"
+                                  << pGroup->_idExpressions.size(),
+                    /*
+                                  << [&]() -> std::string {
+                        str::stream ss;
+                        for (auto&& exp : pGroup->_idExpressions) {
+                            ss << exp->serialize(false).toString() << ", ";
+                        }
+                        return ss;
+                    }(),
+                    */
+                    pGroup->_idExpressions.empty());
             pGroup->setIdExpression(parseIdExpression(expCtx, groupField, vps));
             invariant(!pGroup->_idExpressions.empty());
         } else if (pFieldName == "$doingMerge") {
@@ -540,7 +574,6 @@ intrusive_ptr<DocumentSource> DocumentSourceGroup::createFromBson(
 }
 
 namespace {
-
 using GroupsMap = DocumentSourceGroup::GroupsMap;
 
 class SorterComparator {

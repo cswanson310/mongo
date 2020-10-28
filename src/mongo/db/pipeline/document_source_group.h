@@ -41,6 +41,8 @@
 
 namespace mongo {
 
+class DocumentSourceSemiStreamingGroup;
+
 /**
  * GroupFromFirstTransformation consists of a list of (field name, expression pairs). It returns a
  * document synthesized by assigning each field name in the output document to the result of
@@ -97,6 +99,12 @@ public:
     DocumentSourceGroup(const boost::intrusive_ptr<ExpressionContext>& pExpCtx);
 
     DocumentSourceGroup(const boost::intrusive_ptr<ExpressionContext>& pExpCtx,
+                        std::vector<AccumulationStatement> accumulationStatements,
+                        std::vector<std::string> idFieldNames,
+                        std::vector<boost::intrusive_ptr<Expression>> idExpressions,
+                        boost::optional<size_t> maxMemoryUsageBytes = boost::none);
+
+    DocumentSourceGroup(const boost::intrusive_ptr<ExpressionContext>& pExpCtx,
                         const boost::intrusive_ptr<Expression>& groupByExpression,
                         std::vector<AccumulationStatement> accumulationStatements,
                         boost::optional<size_t> maxMemoryUsageBytes = boost::none);
@@ -105,8 +113,9 @@ public:
 
     boost::intrusive_ptr<DocumentSource> optimize() final;
     DepsTracker::State getDependencies(DepsTracker* deps) const final;
-    Value serialize(boost::optional<ExplainOptions::Verbosity> explain = boost::none) const final;
-    const char* getSourceName() const final;
+    Value serialize(
+        boost::optional<ExplainOptions::Verbosity> explain = boost::none) const override;
+    const char* getSourceName() const override;
     GetModPathsReturn getModifiedPaths() const final;
     StringMap<boost::intrusive_ptr<Expression>> getIdFields() const;
     const std::vector<AccumulationStatement>& getAccumulatedFields() const;
@@ -150,8 +159,11 @@ public:
     void addAccumulator(AccumulationStatement accumulationStatement);
 
     /**
-     * Sets the expression to use to determine the group id of each document.
+     * Decomposes the _id expression into its parts if 'idExpression' is an object expression.
      */
+    std::pair<std::vector<std::string>, std::vector<boost::intrusive_ptr<Expression>>>
+    decomposeIdExpression(const boost::intrusive_ptr<Expression> idExpression);
+
     void setIdExpression(const boost::intrusive_ptr<Expression> idExpression);
 
     /**
@@ -191,7 +203,7 @@ public:
         const;
 
     Pipeline::SourceContainer::iterator doOptimizeAt(Pipeline::SourceContainer::iterator itr,
-                                                     Pipeline::SourceContainer* container) final;
+                                                     Pipeline::SourceContainer* container) override;
 
 protected:
     GetNextResult doGetNext() override;
@@ -336,6 +348,7 @@ private:
 
 class DocumentSourceSemiStreamingGroup : public DocumentSourceGroup {
 public:
+    constexpr static StringData kStageName = "$streamingGroup"_sd;
     struct GroupByPart {
         boost::intrusive_ptr<Expression> expression;
         boost::optional<SortDirection> sortDirection;
@@ -348,25 +361,47 @@ public:
 
     static boost::intrusive_ptr<DocumentSourceSemiStreamingGroup> create(
         const boost::intrusive_ptr<ExpressionContext>& expCtx,
-        boost::intrusive_ptr<Expression> idExpression,
+        GroupByPart groupKey,
+        std::vector<AccumulationStatement> accumulationStatements,
+        boost::optional<size_t> maxMemoryUsageBytes = boost::none) {
+        return create(expCtx,
+                      {},
+                      {std::move(groupKey)},
+                      std::move(accumulationStatements),
+                      maxMemoryUsageBytes);
+    }
+    static boost::intrusive_ptr<DocumentSourceSemiStreamingGroup> create(
+        const boost::intrusive_ptr<ExpressionContext>& expCtx,
+        std::vector<std::string> idFieldNames,
         std::vector<GroupByPart> groupKeys,
         std::vector<AccumulationStatement> accumulationStatements,
         boost::optional<size_t> maxMemoryUsageBytes = boost::none) {
         return make_intrusive<DocumentSourceSemiStreamingGroup>(expCtx,
-                                                                std::move(idExpression),
+                                                                std::move(idFieldNames),
                                                                 std::move(groupKeys),
                                                                 std::move(accumulationStatements),
                                                                 maxMemoryUsageBytes);
     }
 
     DocumentSourceSemiStreamingGroup(const boost::intrusive_ptr<ExpressionContext>& expCtx,
-                                     boost::intrusive_ptr<Expression> idExpression,
+                                     std::vector<std::string> idFieldNames,
                                      std::vector<GroupByPart> groupKeys,
                                      std::vector<AccumulationStatement> accumulationStatements,
                                      boost::optional<size_t> maxMemoryUsageBytes)
         : DocumentSourceGroup(expCtx,
-                              std::move(idExpression),
                               std::move(accumulationStatements),
+                              std::move(idFieldNames),
+                              // Extract just the expressions from the group keys.
+                              [&]() {
+                                  std::vector<boost::intrusive_ptr<Expression>> idExpressions;
+                                  std::transform(groupKeys.begin(),
+                                                 groupKeys.end(),
+                                                 std::back_inserter(idExpressions),
+                                                 [](const GroupByPart groupByPart) {
+                                                     return groupByPart.expression;
+                                                 });
+                                  return idExpressions;
+                              }(),
                               maxMemoryUsageBytes),
           _groupKeys(std::move(groupKeys)),
           _sortPattern([this] {
@@ -385,6 +420,20 @@ public:
           _sortKeyGen(_sortPattern, expCtx->getCollator()) {}
 
     ~DocumentSourceSemiStreamingGroup() {}
+
+    const char* getSourceName() const override {
+        return kStageName.rawData();
+    }
+
+    Pipeline::SourceContainer::iterator doOptimizeAt(Pipeline::SourceContainer::iterator itr,
+                                                     Pipeline::SourceContainer* container) final {
+        return std::next(itr);
+    }
+    /*
+    Value serialize(boost::optional<ExplainOptions::Verbosity> explain = boost::none) const final {
+        return DocumentSourceGroup::serialize(explain);
+    }
+    */
 
 protected:
     GetNextResult doGetNext() final {

@@ -253,11 +253,8 @@ TEST_F(DocumentSourceSemiStreamingGroupTest, ShouldStreamResultsInEasyCase) {
     AccumulationStatement countStatement{"count", accExpr};
     auto groupKeyExpression =
         ExpressionFieldPath::createPathFromString(expCtx.get(), "a", expCtx->variablesParseState);
-    auto semiStreamingGroup =
-        DocumentSourceSemiStreamingGroup::create(expCtx,
-                                                 groupKeyExpression,
-                                                 {{groupKeyExpression, SortDirection::kAscending}},
-                                                 {countStatement});
+    auto semiStreamingGroup = DocumentSourceSemiStreamingGroup::create(
+        expCtx, {groupKeyExpression, SortDirection::kAscending}, {countStatement});
     auto mock = DocumentSourceMock::createForTest({Document{{"a", 1}},
                                                    Document{{"a", 1}},
                                                    Document{{"a", 1}},
@@ -296,11 +293,8 @@ TEST_F(DocumentSourceSemiStreamingGroupTest, ShouldStreamResultsMixedWithArrays)
     AccumulationStatement countStatement{"count", accExpr};
     auto groupKeyExpression =
         ExpressionFieldPath::createPathFromString(expCtx.get(), "a", expCtx->variablesParseState);
-    auto semiStreamingGroup =
-        DocumentSourceSemiStreamingGroup::create(expCtx,
-                                                 groupKeyExpression,
-                                                 {{groupKeyExpression, SortDirection::kAscending}},
-                                                 {countStatement});
+    auto semiStreamingGroup = DocumentSourceSemiStreamingGroup::create(
+        expCtx, {groupKeyExpression, SortDirection::kAscending}, {countStatement});
     auto mock = DocumentSourceMock::createForTest({Document{{"a", 1}},
                                                    Document{{"a", {1}}},
                                                    Document{{"a", 1}},
