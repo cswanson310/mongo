@@ -16,11 +16,11 @@ Here we will divide it into the following phases and topics:
  * Command Parsing & Validation
  * MQL Parsing & Validation
  * Query Optimization
- ** Index Tagging
- ** Plan Enumeration
- ** Plan Selection
- ** Plan Compilation
- ** Plan Caching
+     * Index Tagging
+     * Plan Enumeration
+     * Plan Selection
+     * Plan Compilation
+     * Plan Caching
  * Query Execution
 
 Here we focus on the process for a single node or replica set where all
