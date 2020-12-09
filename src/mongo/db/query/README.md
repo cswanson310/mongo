@@ -13,28 +13,28 @@ distinct, and mapReduce.
 
 Here we will divide it into the following phases and topics:
 
- * *Command Parsing & Validation:* Which arguments to the command are
+ * **Command Parsing & Validation:** Which arguments to the command are
    recognized and do they have the right types?
- * *Query Language Parsing & Validation:* More complex parsing of
+ * **Query Language Parsing & Validation:** More complex parsing of
    elements like query predicates and aggregation pipelines, which are
    skipped in the first section due to complexity of parsing rules.
- * *Query Optimization*
-     * *Normalization and Rewrites:* Before we try to look at data
+ * **Query Optimization**
+     * **Normalization and Rewrites:** Before we try to look at data
        access paths, we perform some simplification, normalization and
        "canonicalization" of the query.
-     * *Index Tagging:* Figure out which indexes could potentially be
+     * **Index Tagging:** Figure out which indexes could potentially be
        helpful for which query predicates.
-     * *Plan Enumeration:* Given the set of associated indexes and
+     * **Plan Enumeration:** Given the set of associated indexes and
        predicates, enumerate all possible combinations of assignments
        for the whole query tree and output a draft query plan for each.
-     * *Plan Compilation:* For each of the draft query plans, finalize
+     * **Plan Compilation:** For each of the draft query plans, finalize
        the details. Pick index bounds, add any necessary sorts, fetches,
        or projections
-     * *Plan Selection:* Compete the candidate plans against each other
+     * **Plan Selection:** Compete the candidate plans against each other
        and select the winner.
-     * *Plan Caching:* Attempt to skip the expensive steps above by
+     * **Plan Caching:** Attempt to skip the expensive steps above by
        caching the previous winning solution.
- * *Query Execution:* Iterate the winning plan and return results to the
+ * **Query Execution:** Iterate the winning plan and return results to the
    client.
 
 Here we focus on the process for a single node or replica set where all
@@ -126,13 +126,32 @@ the request's read concern, read preference, maxTimeMs, etc. The
 OperationContext is generally accessible throughout the codebase, and
 serves as a place to hang these operation-specific settings.
 
-Here we may also take any relevant locks for the operation. We usually
-use some helper like "AutoGetCollectionForReadCommand" which will do a
-bit more than just take the lock, it will also ensure things are set up
+Also early in the command implementation we may also take any relevant
+locks for the operation. We usually use some helper like
+"AutoGetCollectionForReadCommand" which will do a bit more than just
+take the lock. For example, it will also ensure things are set up
 properly for our read concern semantics and will set some debug and
 diagnostic info which will show up in one or all of '$currentOp', the
 logs and system.profile collection, the output of the 'top' command,
 '$collStats', and possibly some others.
+
+Once we have obtained a lock we can safely get access to the
+collection's default collation, which will help us construct an
+ExpressionContext.
+
+An "ExpressionContext" can be thought of as the query system's version
+of the OperationContext. Please try your hardest to ignore the name, it
+is a legacy name and not particularly helpful or descriptive. Once upon
+a time it was used just for parsing expressions, but it has since
+broadened scope and perhaps "QueryContext" or something like that would
+be a better name. This object stores state that may be useful to access
+throughout the lifespan of a query, but is probably not relevant to any
+other operations. This includes things like the collation, a time zone
+database, and various random booleans and state. It is expected to make
+an ExpressionContext before parsing the query language aspects of the
+request. The most obvious reason this is required is that the
+ExpressionContext holds parsing state like the variable resolution
+tracking and the maximum sub-pipeline depth reached so far.
 
 #### Authorization checking
 
