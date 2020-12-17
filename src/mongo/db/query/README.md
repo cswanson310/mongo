@@ -1,14 +1,14 @@
 # Query System Internals
 
 *Disclaimer*: This is a work in progress. It is not complete and we will
-do our best to do so in a timely manner.
+do our best to complete it in a timely manner.
 
 ## Overview
 
 The query system generally is responsible for interpreting the user's
-request, finding an optimal way to satisfy it, and to actually bring the
-results. It is primarily exposed through the commands find and
-aggregate, but also used in associated read commands like count,
+request, finding an optimal way to satisfy it, and to actually compute
+the results. It is primarily exposed through the find and aggregate
+commands, but also used in associated read commands like count,
 distinct, and mapReduce.
 
 Here we will divide it into the following phases and topics:
@@ -37,14 +37,15 @@ Here we will divide it into the following phases and topics:
  * **Query Execution:** Iterate the winning plan and return results to the
    client.
 
-Here we focus on the process for a single node or replica set where all
-the data is expected to be found locally. We plan to add documentation
-for the sharded case in the src/mongo/s/query/ directory later.
+In this documentation we focus on the process for a single node or
+replica set where all the data is expected to be found locally. We plan
+to add documentation for the sharded case in the src/mongo/s/query/
+directory later.
 
 ### Command Parsing & Validation
 
-Here we will focus on the following commands, generally maintained by
-the query team and with the majority of our focus on the first two.
+The following commands are generally maintained by the query team, with
+the majority of our focus given to the first two.
 * find
 * aggregate
 * count
@@ -58,20 +59,22 @@ The code path for each of these starts in a Command, named something
 like MapReduceCommand or FindCmd. You can generally find these in
 src/mongo/db/commands/.
 
-The first round of parsing is to piece apart the command into it's
+The first round of parsing is to piece apart the command into its
 components. Notably, we don't yet try to understand the meaning of some
 of the more complex arguments which are more typically considered the
 "MongoDB Query Language" or MQL. For example, these are find's 'filter',
 'projection', and 'sort' arguments, or the individual stages in the
 'pipeline' argument to aggregate.
 
-In contrast, here we just take the incoming BSON object and piece it
-apart into a C++ struct with separate storage for each argument, keeping
-the MQL elements as mostly unexamined BSON for now. For example, going
-from one BSON object with {filter: {}, skip: 4, limit: 5} into a C++
-object which stores those things as member variables. Here we prefer
-using an Interface Definition Language (IDL) tool to generate the parser
-and actually generate the C++ class itself.
+Instead, command-level parsing just takes the incoming BSON object and
+piece it apart into a C++ struct with separate storage for each
+argument, keeping the MQL elements as mostly unexamined BSON for now.
+For example, going from one BSON object with `{filter: {$or: [{size: 5},
+{size: 6}]}, skip: 4, limit: 5}` into a C++ object which stores `filter`,
+`skip` and 'limit' as member variables. Note that `filter` is stored as
+a BSONObj - we don't yet know that it has a `$or` inside. For this
+process, we prefer using an Interface Definition Language (IDL) tool to
+generate the parser and actually generate the C++ class itself.
 
 ### The Interface Definition Language
 
@@ -159,11 +162,31 @@ In many but not all cases, we have now parsed enough to check whether
 the user is allowed to perform this request. We usually only need the
 type of command and the namespace to do this. In the case of mapReduce,
 we also take into account whether the command will perform writes based
-on the output format. A more notable exception is the aggregate command,
-where different stages can read different types of data which require
-special permissions. For example a pipeline with a $lookup or a
-$currentOp may require additional privileges beyond just the namespace
-given to the command.
+on the output format.
+
+A more notable exception is the aggregate command, where different
+stages can read different types of data which require special
+permissions. For example a pipeline with a $lookup or a $currentOp may
+require additional privileges beyond just the namespace given to the
+command. We defer this authorization checking until we have parsed
+further to a point where we understand which stages are involved. This
+is actually a special case, and we use a class called the
+`LiteParsedPipeline` for this and other similar purposes.
+
+ The `LiteParsedPipeline` class is constructed via a semi-parse which
+only goes so far as to tease apart which stages are involved. It is a
+very simple model of an aggregation pipeline, and is supposed to be
+cheaper to construct than doing a full parse. As a general rule of
+thumb, we try to keep expensive things from happening until after we've
+verified the user has the required privileges to do those things. 
+
+This simple model can be used things we want to inspect before
+proceeding and building a full model of the user's query or request. As
+some examples of what is deferred, this model has not yet verified that
+the input is well formed, and has not yet parsed the expressions or
+detailed arguments to the stages. You can check out the
+`LiteParsedPipeline` API to see what kinds of questions we can answer
+with just the stage names and pipeline structure.
 
 #### Additional Validation
 
