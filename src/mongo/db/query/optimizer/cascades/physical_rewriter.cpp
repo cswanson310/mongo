@@ -291,6 +291,7 @@ public:
         const ProjectionNameOrderPreservingSet& requiredProjections =
             getPropertyConst<ProjectionRequirement>(_physProps).getProjections();
         const ProjectionName& scanProjection = indexingAvailability.getScanProjection();
+        const GroupIdType scanGroupId = indexingAvailability.getScanGroupId();
         const bool requiresScanProjection = requiredProjections.find(scanProjection).second;
 
         if (requiresScanProjection) {
@@ -299,35 +300,39 @@ public:
             uassert(0,
                     "Indexing availability must imply a availability of exactly one collection",
                     scanDefSet.size() == 1);
-            const std::string& scanDefName = *scanDefSet.begin();
 
             // Try removing indexing requirement by performing a seek on the inner side.
-            // TODO: convert this to optimization under IndexReqTarget::Seek.
             FieldProjectionMap fieldProjectionMap;
             fieldProjectionMap._rootProjection = scanProjection;
-            ABT physicalSeek = make<SeekNode>(
-                _rewriter._leftRIDProjectionName, std::move(fieldProjectionMap), scanDefName);
-
-            ABT physicalLimitSkip =
-                make<LimitSkipNode>(LimitSkipRequirement{1, 0}, std::move(physicalSeek));
 
             ABT physicalJoin =
                 make<BinaryJoinNode>(JoinType::Inner,
                                      ProjectionNameSet{_rewriter._leftRIDProjectionName},
                                      Constant::boolean(true),
                                      make<MemoLogicalDelegatorNode>(_groupId),
-                                     std::move(physicalLimitSkip));
+                                     make<MemoLogicalDelegatorNode>(scanGroupId));
+
             ABT& leftChildRef = physicalJoin.cast<BinaryJoinNode>()->getLeftChild();
+            ABT& rightChildRef = physicalJoin.cast<BinaryJoinNode>()->getRightChild();
 
             // We are propagating the distribution requirements on the inner side.
-            Properties newProps = _physProps;
+            Properties leftProps = _physProps;
             setPropertyOverwrite<IndexingRequirement>(
-                newProps, {IndexReqTarget::Index, _rewriter._leftRIDProjectionName});
-            getProperty<ProjectionRequirement>(newProps).getProjections().erase(scanProjection);
+                leftProps, {IndexReqTarget::Index, _rewriter._leftRIDProjectionName});
+            getProperty<ProjectionRequirement>(leftProps).getProjections().erase(scanProjection);
 
-            // Optimize only outer child.
+            // TODO: add repeated execution property.
+            Properties rightProps = _physProps;
+            setPropertyOverwrite<IndexingRequirement>(
+                rightProps, {IndexReqTarget::Seek, _rewriter._leftRIDProjectionName});
+            setPropertyOverwrite<ProjectionRequirement>(
+                rightProps, ProjectionRequirement(ProjectionNameVector{scanProjection}));
+            removeProperty<CollationRequirement>(rightProps);
+
             optimizeChildren<BinaryJoinNode>(
-                _queue, std::move(physicalJoin), {{&leftChildRef, std::move(newProps)}});
+                _queue,
+                std::move(physicalJoin),
+                {{&leftChildRef, std::move(leftProps)}, {&rightChildRef, std::move(rightProps)}});
         } else {
             // Try indexScanOnly (covered index) if we do not require scan projection.
             Properties newProps = _physProps;
@@ -388,11 +393,6 @@ private:
 class ImplementationVisitor {
 public:
     void operator()(const ABT& /*n*/, const ScanNode& node) {
-        const auto& indexReq = getPropertyConst<IndexingRequirement>(_physProps);
-        if (indexReq.getIndexReqTarget() != IndexReqTarget::Complete) {
-            // At this point can only satisfy complete scan.
-            return;
-        }
         if (hasUnenforcedLimitSkip(_physProps)) {
             // Cannot satisfy an unenforced limit-skip.
             return;
@@ -403,34 +403,62 @@ public:
             return;
         }
 
-        bool useParallelScan = false;
+        const auto& indexReq = getPropertyConst<IndexingRequirement>(_physProps);
+        switch (indexReq.getIndexReqTarget()) {
+            case IndexReqTarget::Index:
+                // At this point cannot only satisfy index-only.
+                return;
+
+            case IndexReqTarget::Seek:
+                uassert(0,
+                        "RID projection is required for seek",
+                        !indexReq.getRIDProjectionName().empty());
+                // Fall through to code below.
+                break;
+
+            case IndexReqTarget::Complete:
+                // Fall through to code below.
+                break;
+
+            default:
+                MONGO_UNREACHABLE;
+        }
+
+        // Handle complete indexing requirement.
+        bool canUseParallelScan = false;
         if (!distributionsCompatible(
                 _rewriter._metadata._scanDefs.at(node.getScanDefName()).getDistributionAndPaths(),
                 node.getProjectionName(),
                 _groupId,
                 {},
-                useParallelScan)) {
+                canUseParallelScan)) {
             return;
         }
 
         FieldProjectionMap fieldProjectionMap;
-        if (!indexReq.getRIDProjectionName().empty()) {
-            fieldProjectionMap._ridProjection = indexReq.getRIDProjectionName();
-        }
-
         for (const ProjectionName& required :
              getPropertyConst<ProjectionRequirement>(_physProps).getAffectedProjectionNames()) {
             if (required == node.getProjectionName()) {
                 fieldProjectionMap._rootProjection = node.getProjectionName();
             } else {
-                // Regular scan node can satisfy only using its single projection.
+                // Regular scan node can satisfy only using its root projection (not fields).
                 return;
             }
         }
 
-        ABT physicalScan = make<PhysicalScanNode>(
-            std::move(fieldProjectionMap), node.getScanDefName(), useParallelScan);
-        optimizeChild<PhysicalScanNode>(_queue, std::move(physicalScan));
+        if (indexReq.getIndexReqTarget() == IndexReqTarget::Seek) {
+            ABT physicalSeek = make<SeekNode>(indexReq.getRIDProjectionName(),
+                                              std::move(fieldProjectionMap),
+                                              node.getScanDefName());
+            optimizeChild<SeekNode>(_queue, std::move(physicalSeek));
+        } else {
+            if (!indexReq.getRIDProjectionName().empty()) {
+                fieldProjectionMap._ridProjection = indexReq.getRIDProjectionName();
+            }
+            ABT physicalScan = make<PhysicalScanNode>(
+                std::move(fieldProjectionMap), node.getScanDefName(), canUseParallelScan);
+            optimizeChild<PhysicalScanNode>(_queue, std::move(physicalScan));
+        }
     }
 
     void operator()(const ABT& /*n*/, const MemoLogicalDelegatorNode& /*node*/) {
@@ -590,12 +618,12 @@ public:
             for (const auto& [indexDefName, candidateIndexEntry] : node.getCandidateIndexMap()) {
                 const auto& indexDef = scanDef.getIndexDefs().at(indexDefName);
                 {
-                    bool useParallelScanUnused = false;
+                    bool canUseParallelScanUnused = false;
                     if (!distributionsCompatible(indexDef.getDistributionAndPaths(),
                                                  scanProjectionName,
                                                  scanGroupId,
                                                  reqMap,
-                                                 useParallelScanUnused)) {
+                                                 canUseParallelScanUnused)) {
                         return;
                     }
                 }
@@ -625,12 +653,12 @@ public:
                 optimizeChild<IndexScanNode>(_queue, std::move(physicalIndexScan));
             }
         } else if (!hasProperPath) {
-            bool useParallelScan = false;
+            bool canUseParallelScan = false;
             if (!distributionsCompatible(scanDef.getDistributionAndPaths(),
                                          scanProjectionName,
                                          scanGroupId,
                                          reqMap,
-                                         useParallelScan)) {
+                                         canUseParallelScan)) {
                 return;
             }
 
@@ -638,15 +666,13 @@ public:
             if (ridProjectionName.empty()) {
                 // No range. Return a physical scan with field map.
                 ABT physicalScan = make<PhysicalScanNode>(
-                    std::move(fieldProjectionMap), scanDefName, useParallelScan);
+                    std::move(fieldProjectionMap), scanDefName, canUseParallelScan);
                 optimizeChild<PhysicalScanNode>(_queue, std::move(physicalScan));
             } else {
-                // Try Seek. Add a Limit 1.
+                // Try Seek. "Limit 1" will be added implicitly.
                 ABT physicalSeek =
                     make<SeekNode>(ridProjectionName, std::move(fieldProjectionMap), scanDefName);
-                ABT physicalLimitSkip =
-                    make<LimitSkipNode>(LimitSkipRequirement{1, 0}, std::move(physicalSeek));
-                optimizeChild<SeekNode>(_queue, std::move(physicalLimitSkip));
+                optimizeChild<SeekNode>(_queue, std::move(physicalSeek));
             }
         }
     }
@@ -1131,7 +1157,7 @@ private:
                                  const ProjectionName& scanProjection,
                                  const GroupIdType scanGroupId,
                                  const PartialSchemaRequirements& reqMap,
-                                 bool& useParallelScan) {
+                                 bool& canUseParallelScan) {
         const DistributionRequirement& required =
             getPropertyConst<DistributionRequirement>(_physProps);
         const auto& scanLogicalProps = _rewriter._memo.getGroup(scanGroupId)._logicalProperties;
@@ -1152,7 +1178,7 @@ private:
 
             case DistributionType::UnknownPartitioning:
                 if (scanDistributions.count({DistributionType::UnknownPartitioning}) > 0) {
-                    useParallelScan = true;
+                    canUseParallelScan = true;
                     return true;
                 }
                 return false;

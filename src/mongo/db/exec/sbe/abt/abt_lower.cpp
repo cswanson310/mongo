@@ -932,17 +932,20 @@ std::unique_ptr<sbe::PlanStage> SBENodeLowering::walk(const SeekNode& n,
 
     boost::optional<sbe::value::SlotId> seekKeySlot = _slotMap.at(n.getRIDProjectionName());
 
-    return sbe::makeS<sbe::ScanStage>(nss.uuid().get(),
-                                      rootSlot,
-                                      ridSlot,
-                                      fields,
-                                      vars,
-                                      seekKeySlot,
-                                      true /*forward*/,
-                                      nullptr /*yieldPolicy*/,
-                                      kEmptyPlanNodeId,
-                                      sbe::LockAcquisitionCallback{},
-                                      sbe::ScanOpenCallback{});
+    auto seekStage = sbe::makeS<sbe::ScanStage>(nss.uuid().get(),
+                                                rootSlot,
+                                                ridSlot,
+                                                fields,
+                                                vars,
+                                                seekKeySlot,
+                                                true /*forward*/,
+                                                nullptr /*yieldPolicy*/,
+                                                kEmptyPlanNodeId,
+                                                sbe::LockAcquisitionCallback{},
+                                                sbe::ScanOpenCallback{});
+
+    return sbe::makeS<sbe::LimitSkipStage>(
+        std::move(seekStage), 1 /*limit*/, 0 /*skip*/, kEmptyPlanNodeId);
 }
 
 const properties::Properties& SBENodeLowering::getPhysicalProperties(const Node& n) const {

@@ -555,7 +555,7 @@ TEST(PhysOptimizer, FilterIndexing) {
 
         ABT optimized = rootNode;
         ASSERT_TRUE(phaseManager.optimize(optimized));
-        ASSERT_EQ(4, phaseManager.getPhysicalPlanExplorationCount());
+        ASSERT_EQ(5, phaseManager.getPhysicalPlanExplorationCount());
 
         // Test sargable filter is satisfied with an index scan.
         ASSERT_EQ(
@@ -566,10 +566,6 @@ TEST(PhysOptimizer, FilterIndexing) {
             "|       Variable [root]\n"
             "BinaryJoin [joinType: Inner, {rid_0}]\n"
             "|   |   Const [true]\n"
-            "|   LimitSkipNode []\n"
-            "|   |   limitSkip: []\n"
-            "|   |       limit: 1\n"
-            "|   |       skip: 0\n"
             "|   Seek [ridProjection: 'rid_0', {'<root>': 'root'}, 'c1']\n"
             "|   |   BindBlock:\n"
             "|   |       [root]\n"
@@ -785,7 +781,7 @@ TEST(PhysOptimizer, EvalIndexing1) {
 
     ABT optimized = rootNode;
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(9, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(11, phaseManager.getPhysicalPlanExplorationCount());
 
     ASSERT_EQ(
         "RootNode []\n"
@@ -795,10 +791,6 @@ TEST(PhysOptimizer, EvalIndexing1) {
         "|       Variable [root]\n"
         "BinaryJoin [joinType: Inner, {rid_0}]\n"
         "|   |   Const [true]\n"
-        "|   LimitSkipNode []\n"
-        "|   |   limitSkip: []\n"
-        "|   |       limit: 1\n"
-        "|   |       skip: 0\n"
         "|   Seek [ridProjection: 'rid_0', {'<root>': 'root'}, 'c1']\n"
         "|   |   BindBlock:\n"
         "|   |       [root]\n"
@@ -862,7 +854,7 @@ TEST(PhysOptimizer, MultiKeyIndex) {
 
     ABT optimized = rootNode;
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(47, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(49, phaseManager.getPhysicalPlanExplorationCount());
 
     // Index2 will be used in reverse direction.
     ASSERT_EQ(
@@ -873,10 +865,6 @@ TEST(PhysOptimizer, MultiKeyIndex) {
         "|       Variable [root]\n"
         "BinaryJoin [joinType: Inner, {rid_0}]\n"
         "|   |   Const [true]\n"
-        "|   LimitSkipNode []\n"
-        "|   |   limitSkip: []\n"
-        "|   |       limit: 1\n"
-        "|   |       skip: 0\n"
         "|   Seek [ridProjection: 'rid_0', {'<root>': 'root'}, 'c1']\n"
         "|   |   BindBlock:\n"
         "|   |       [root]\n"
@@ -964,7 +952,7 @@ TEST(PhysOptimizer, CompoundIndex1) {
 
     ABT optimized = rootNode;
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(121, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(123, phaseManager.getPhysicalPlanExplorationCount());
 
     ASSERT_EQ(
         "RootNode []\n"
@@ -974,10 +962,6 @@ TEST(PhysOptimizer, CompoundIndex1) {
         "|       Variable [root]\n"
         "BinaryJoin [joinType: Inner, {rid_0}]\n"
         "|   |   Const [true]\n"
-        "|   LimitSkipNode []\n"
-        "|   |   limitSkip: []\n"
-        "|   |       limit: 1\n"
-        "|   |       skip: 0\n"
         "|   Seek [ridProjection: 'rid_0', {'<root>': 'root'}, 'c1']\n"
         "|   |   BindBlock:\n"
         "|   |       [root]\n"
@@ -1038,7 +1022,7 @@ TEST(PhysOptimizer, IndexBoundsIntersect) {
 
     ABT optimized = rootNode;
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(8, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(9, phaseManager.getPhysicalPlanExplorationCount());
 
     ASSERT_EQ(
         "RootNode []\n"
@@ -1048,10 +1032,6 @@ TEST(PhysOptimizer, IndexBoundsIntersect) {
         "|       Variable [root]\n"
         "BinaryJoin [joinType: Inner, {rid_0}]\n"
         "|   |   Const [true]\n"
-        "|   LimitSkipNode []\n"
-        "|   |   limitSkip: []\n"
-        "|   |       limit: 1\n"
-        "|   |       skip: 0\n"
         "|   Seek [ridProjection: 'rid_0', {'<root>': 'root'}, 'c1']\n"
         "|   |   BindBlock:\n"
         "|   |       [root]\n"
@@ -1461,7 +1441,7 @@ TEST(PhysOptimizer, PartialIndex) {
 
     ABT optimized = rootNode;
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(5, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(6, phaseManager.getPhysicalPlanExplorationCount());
 
     ASSERT_EQ(
         "RootNode []\n"
@@ -1471,10 +1451,6 @@ TEST(PhysOptimizer, PartialIndex) {
         "|       Variable [root]\n"
         "BinaryJoin [joinType: Inner, {rid_0}]\n"
         "|   |   Const [true]\n"
-        "|   LimitSkipNode []\n"
-        "|   |   limitSkip: []\n"
-        "|   |       limit: 1\n"
-        "|   |       skip: 0\n"
         "|   Seek [ridProjection: 'rid_0', {'<root>': 'root'}, 'c1']\n"
         "|   |   BindBlock:\n"
         "|   |       [root]\n"

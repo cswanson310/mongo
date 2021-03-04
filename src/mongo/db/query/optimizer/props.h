@@ -281,9 +281,9 @@ MAKE_PRINTABLE_ENUM_STRING_ARRAY(IndexReqTargetEnum, IndexReqTarget, INDEXREQTAR
 
 /**
  * A physical property which describes if we intend to satisfy sargable predicates using an index.
- * With indexScanOnly = false and empty RID projection name, we are requiring a regular physical
- * scan (both rid and row) With indexScanOnly = false and non-empty RID projection name, we are
- * targeting a physical Seek. With indexScanOnly = true (with or without RID projection name), we
+ * With indexing requirement "Complete", we are requiring a regular physical
+ * scan (both rid and row). With "Seek" (where we must have a non-empty RID projection name), we are
+ * targeting a physical Seek. With "Index" (with or without RID projection name), we
  * are targeting a physical IndexScan. If in this case we have set RID projection, then we have
  * either gone for a Seek, or we have performed intersection. With empty RID we are targeting a
  * covered index scan.
