@@ -206,6 +206,8 @@ public:
         Properties childProps = _physProps;
         removeProperty<CollationRequirement>(childProps);
         addProjectionsToProperties(childProps, prop.getAffectedProjectionNames());
+        // Collation is a blocking operation and subsequent executions can re-use the state cheaply.
+        removeProperty<RepetitionEstimate>(childProps);
 
         ABT enforcer = make<CollationNode>(prop, make<MemoLogicalDelegatorNode>(_groupId));
         optimizeChild<CollationNode>(_queue, std::move(enforcer), std::move(childProps));
@@ -285,6 +287,17 @@ public:
         uassert(0,
                 "IndexingRequirement without indexing availability",
                 hasProperty<IndexingAvailability>(_logicalProps));
+        const auto& scanDefSet =
+            getPropertyConst<CollectionAvailability>(_logicalProps).getScanDefSet();
+        // TODO: consider ramifications for left outer joins. We can propagate rid from the otuer
+        // side.
+        uassert(0,
+                "Indexing availability must imply a availability of exactly one collection",
+                scanDefSet.size() == 1);
+        if (_rewriter._metadata._scanDefs.at(*scanDefSet.begin()).getIndexDefs().empty()) {
+            // No indexes on the collection.
+            return;
+        }
 
         const IndexingAvailability& indexingAvailability =
             getPropertyConst<IndexingAvailability>(_logicalProps);
@@ -295,12 +308,6 @@ public:
         const bool requiresScanProjection = requiredProjections.find(scanProjection).second;
 
         if (requiresScanProjection) {
-            const auto& scanDefSet =
-                getPropertyConst<CollectionAvailability>(_logicalProps).getScanDefSet();
-            uassert(0,
-                    "Indexing availability must imply a availability of exactly one collection",
-                    scanDefSet.size() == 1);
-
             // Try removing indexing requirement by performing a seek on the inner side.
             FieldProjectionMap fieldProjectionMap;
             fieldProjectionMap._rootProjection = scanProjection;
@@ -315,14 +322,22 @@ public:
             ABT& leftChildRef = physicalJoin.cast<BinaryJoinNode>()->getLeftChild();
             ABT& rightChildRef = physicalJoin.cast<BinaryJoinNode>()->getRightChild();
 
-            // We are propagating the distribution requirements on the inner side.
+            // For now we are propagating the distribution requirements on both sides.
             Properties leftProps = _physProps;
             setPropertyOverwrite<IndexingRequirement>(
                 leftProps, {IndexReqTarget::Index, _rewriter._leftRIDProjectionName});
             getProperty<ProjectionRequirement>(leftProps).getProjections().erase(scanProjection);
 
-            // TODO: add repeated execution property.
             Properties rightProps = _physProps;
+            // Add repeated execution property to inner side.
+            CEType estimatedRepetitions = hasProperty<RepetitionEstimate>(_physProps)
+                ? getPropertyConst<RepetitionEstimate>(_physProps).getEstimate()
+                : 1.0;
+            estimatedRepetitions *=
+                getPropertyConst<CardinalityEstimate>(_logicalProps).getEstimate();
+            setPropertyOverwrite<RepetitionEstimate>(rightProps,
+                                                     RepetitionEstimate{estimatedRepetitions});
+
             setPropertyOverwrite<IndexingRequirement>(
                 rightProps, {IndexReqTarget::Seek, _rewriter._leftRIDProjectionName});
             setPropertyOverwrite<ProjectionRequirement>(
@@ -341,6 +356,11 @@ public:
             optimizeUnderNewProperties(
                 _queue, make<MemoLogicalDelegatorNode>(_groupId), std::move(newProps));
         }
+    }
+
+    void operator()(const Property&, const RepetitionEstimate& prop) {
+        // Noop. We do not currently enforce this property. It only affects costing.
+        // TODO: consider materializing the subtree if we estimate a lot of repetitions.
     }
 
     static void addEnforcers(const GroupIdType groupId,
@@ -839,6 +859,15 @@ public:
                                            std::move(leftPhysProps),
                                            std::move(rightPhysProps));
         } else {
+            // Add repeated execution property to inner side.
+            CEType estimatedRepetitions = hasProperty<RepetitionEstimate>(_physProps)
+                ? getPropertyConst<RepetitionEstimate>(_physProps).getEstimate()
+                : 1.0;
+            estimatedRepetitions *=
+                getPropertyConst<CardinalityEstimate>(leftLogicalProps).getEstimate();
+            setPropertyOverwrite<RepetitionEstimate>(rightPhysProps,
+                                                     RepetitionEstimate{estimatedRepetitions});
+
             ABT physicalJoin =
                 make<BinaryJoinNode>(JoinType::Inner,
                                      ProjectionNameSet{_rewriter._leftRIDProjectionName},
@@ -927,6 +956,11 @@ public:
         }
 
         Properties newProps = _physProps;
+        // Hash group-by is a blocking operation and subsequent executions can re-use the state
+        // cheaply.
+        // TODO: this is not the case for stream group-by.
+        removeProperty<RepetitionEstimate>(newProps);
+
         // Specifically do not propagate limit-skip.
         removeProperty<LimitSkipRequirement>(newProps);
 

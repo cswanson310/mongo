@@ -216,6 +216,28 @@ const ProjectionName& IndexingRequirement::getRIDProjectionName() const {
     return _ridProjectionName;
 }
 
+RepetitionEstimate::RepetitionEstimate(const CEType estimate) : _estimate(estimate) {}
+
+bool RepetitionEstimate::operator==(const RepetitionEstimate& other) const {
+    return _estimate == other._estimate;
+}
+
+ProjectionNameSet RepetitionEstimate::getAffectedProjectionNames() const {
+    return {};
+}
+
+bool RepetitionEstimate::mergeWith(const RepetitionEstimate& other) const {
+    return false;
+}
+
+CEType RepetitionEstimate::getEstimate() const {
+    return _estimate;
+}
+
+bool RepetitionEstimate::isCompatibleWith(const RepetitionEstimate& other) const {
+    return *this == other;
+}
+
 bool IndexingRequirement::isCompatibleWith(const IndexingRequirement& other) const {
     // For now we assume we are compatible if equal.
     return _indexReqTarget == other._indexReqTarget &&

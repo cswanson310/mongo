@@ -787,6 +787,12 @@ public:
             _parent << printer;
         }
 
+        void operator()(const properties::Property&, const properties::RepetitionEstimate& prop) {
+            ExplainPrinter printer("Repetition estimate: ");
+            printer << prop.getEstimate();
+            _parent << printer;
+        }
+
         void operator()(const properties::Property&,
                         const properties::ProjectionAvailability& prop) {
             ExplainPrinter printer("Logical projection set: ");

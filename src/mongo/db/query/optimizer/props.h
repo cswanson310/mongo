@@ -69,6 +69,7 @@ class LimitSkipRequirement;
 class ProjectionRequirement;
 class DistributionRequirement;
 class IndexingRequirement;
+class RepetitionEstimate;
 
 using Property = algebra::PolyValue<CardinalityEstimate,
                                     ProjectionAvailability,
@@ -79,7 +80,8 @@ using Property = algebra::PolyValue<CardinalityEstimate,
                                     LimitSkipRequirement,
                                     ProjectionRequirement,
                                     DistributionRequirement,
-                                    IndexingRequirement>;
+                                    IndexingRequirement,
+                                    RepetitionEstimate>;
 
 
 template <typename T, typename... Args>
@@ -309,6 +311,31 @@ private:
     const IndexReqTarget _indexReqTarget;
     ProjectionName _ridProjectionName;
 };
+
+/**
+ * A physical property that specifies how many times do we expect to execute the current subtree.
+ * Typically generated via a NLJ where it is set on the inner side to reflect the outer side's
+ * cardinality. This property affects costing of stateful physical operators such as sort and hash
+ * groupby.
+ */
+class RepetitionEstimate final : public PhysicalProperty {
+public:
+    RepetitionEstimate(const CEType estimate);
+
+    bool operator==(const RepetitionEstimate& other) const;
+
+    ProjectionNameSet getAffectedProjectionNames() const;
+
+    bool isCompatibleWith(const RepetitionEstimate& other) const;
+
+    bool mergeWith(const RepetitionEstimate& other) const;
+
+    CEType getEstimate() const;
+
+private:
+    CEType _estimate;
+};
+
 
 /**
  * A logical property which specifies available projections for a given ABT tree.

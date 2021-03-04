@@ -119,6 +119,7 @@ public:
 
     double operator()(const ABT& /*n*/, const GroupByNode& node) {
         const CEType childCE = getChildCE(node);
+        // TODO: consider RepetitionEstimate since this is a stateful operation.
         return kGroupByIncrementalCost * childCE;
     }
 
@@ -132,6 +133,7 @@ public:
     }
 
     double operator()(const ABT& /*n*/, const CollationNode& node) {
+        // TODO: consider RepetitionEstimate since this is a stateful operation.
         return kCollationIncrementalCost * _cardinalityEstimate;
     }
 
@@ -230,6 +232,11 @@ private:
                 result = limit;
             }
         }
+
+        if (hasProperty<RepetitionEstimate>(physProps)) {
+            result *= getPropertyConst<RepetitionEstimate>(physProps).getEstimate();
+        }
+
         return result;
     }
 

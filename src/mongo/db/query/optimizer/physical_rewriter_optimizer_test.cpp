@@ -68,7 +68,7 @@ TEST(PhysOptimizer, PhysicalRewriterBasic) {
         ProjectionNameSet expSet = {"p1", "p2"};
         ASSERT_TRUE(expSet == env.topLevelProjections());
     }
-    ASSERT_EQ(18, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(10, phaseManager.getPhysicalPlanExplorationCount());
 
     // Standard plan output.
     ASSERT_EQ(
@@ -262,7 +262,7 @@ TEST(PhysOptimizer, GroupBy) {
 
     ABT optimized = std::move(rootNode);
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(25, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(17, phaseManager.getPhysicalPlanExplorationCount());
 
     ASSERT_EQ(
         "RootNode []\n"
@@ -334,7 +334,7 @@ TEST(PhysOptimizer, GroupBy1) {
 
     ABT optimized = std::move(rootNode);
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(16, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(8, phaseManager.getPhysicalPlanExplorationCount());
 
     // Projection "pb1" is unused and we do not generate an aggregation expression for it.
     ASSERT_EQ(
@@ -397,7 +397,7 @@ TEST(PhysOptimizer, Unwind) {
 
     ABT optimized = std::move(rootNode);
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(25, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(17, phaseManager.getPhysicalPlanExplorationCount());
 
     ASSERT_EQ(
         "RootNode []\n"
@@ -466,7 +466,7 @@ TEST(PhysOptimizer, EvalCollation) {
 
     ABT optimized = std::move(rootNode);
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(9, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(6, phaseManager.getPhysicalPlanExplorationCount());
 
     ASSERT_EQ(
         "RootNode []\n"
@@ -591,7 +591,7 @@ TEST(PhysOptimizer, FilterIndexing) {
 
         ABT optimized = rootNode;
         ASSERT_TRUE(phaseManager.optimize(optimized));
-        ASSERT_EQ(6, phaseManager.getPhysicalPlanExplorationCount());
+        ASSERT_EQ(4, phaseManager.getPhysicalPlanExplorationCount());
 
         // Test we can optimize sargable filter nodes even without an index.
         // (Imporant if we deleted the original filter node from the memo when creating the sargable
@@ -1072,7 +1072,7 @@ TEST(PhysOptimizer, ParallelScan) {
 
     ABT optimized = rootNode;
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(12, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(8, phaseManager.getPhysicalPlanExplorationCount());
 
     ASSERT_EQ(
         "RootNode []\n"
@@ -1134,7 +1134,7 @@ TEST(PhysOptimizer, LocalGlobalAgg) {
 
     ABT optimized = rootNode;
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(43, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(35, phaseManager.getPhysicalPlanExplorationCount());
 
     ASSERT_EQ(
         "RootNode []\n"
@@ -1219,7 +1219,7 @@ TEST(PhysOptimizer, LocalGlobalAgg1) {
 
     ABT optimized = rootNode;
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(23, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(19, phaseManager.getPhysicalPlanExplorationCount());
 
     ASSERT_EQ(
         "RootNode []\n"
@@ -1282,7 +1282,7 @@ TEST(PhysOptimizer, LocalLimitSkip) {
 
     ABT optimized = rootNode;
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(26, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(20, phaseManager.getPhysicalPlanExplorationCount());
 
     ASSERT_EQ(
         "Properties [cost: 59000]\n"
@@ -1492,7 +1492,7 @@ TEST(PhysOptimizer, RequireRID) {
 
     ABT optimized = rootNode;
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(5, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(3, phaseManager.getPhysicalPlanExplorationCount());
 
     // Make sure the Scan node returns rid.
     ASSERT_EQ(
