@@ -514,6 +514,25 @@ private:
     Memo::NodeTargetGroupMap _targetGroupMap;
 };
 
+size_t Memo::NodeIdHash::operator()(const Memo::NodeId& id) const {
+    size_t result = 17;
+    updateHash(result, std::hash<GroupIdType>()(id.first));
+    updateHash(result, std::hash<size_t>()(id.first));
+    return result;
+}
+
+size_t Memo::GroupIdVectorHash::operator()(const Memo::GroupIdVector& v) const {
+    size_t result = 17;
+    for (const GroupIdType id : v) {
+        updateHash(result, std::hash<GroupIdType>()(id));
+    }
+    return result;
+}
+
+size_t Memo::NodeTargetGroupHash::operator()(const ABT::reference_type& nodeRef) const {
+    return std::hash<const Node*>()(nodeRef.cast<Node>());
+}
+
 Memo::Memo(DebugInfo debugInfo, LogicalPropsDeriveFn logicalPropsDeriveFn, CEDeriveFn ceDeriveFn)
     : _groups(),
       _inputGroupsToNodeIdMap(),

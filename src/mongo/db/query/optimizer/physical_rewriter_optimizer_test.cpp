@@ -694,7 +694,7 @@ TEST(PhysOptimizer, EvalIndexing) {
 
         ABT optimized = rootNode;
         ASSERT_TRUE(phaseManager.optimize(optimized));
-        ASSERT_EQ(9, phaseManager.getPhysicalPlanExplorationCount());
+        ASSERT_EQ(6, phaseManager.getPhysicalPlanExplorationCount());
 
         // Should not need a collation node.
         ASSERT_EQ(
@@ -781,7 +781,7 @@ TEST(PhysOptimizer, EvalIndexing1) {
 
     ABT optimized = rootNode;
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(11, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(7, phaseManager.getPhysicalPlanExplorationCount());
 
     ASSERT_EQ(
         "RootNode []\n"
@@ -854,7 +854,7 @@ TEST(PhysOptimizer, MultiKeyIndex) {
 
     ABT optimized = rootNode;
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(49, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(22, phaseManager.getPhysicalPlanExplorationCount());
 
     // Index2 will be used in reverse direction.
     ASSERT_EQ(
@@ -952,7 +952,7 @@ TEST(PhysOptimizer, CompoundIndex1) {
 
     ABT optimized = rootNode;
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(123, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(46, phaseManager.getPhysicalPlanExplorationCount());
 
     ASSERT_EQ(
         "RootNode []\n"

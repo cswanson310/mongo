@@ -134,14 +134,19 @@ class Memo {
 public:
     using GroupIdVector = std::vector<GroupIdType>;
     using NodeId = std::pair<GroupIdType, size_t>;
-    using NodeIdSet = std::set<NodeId>;
 
-    using InputGroupsToNodeIdMap = std::map<GroupIdVector, NodeIdSet>;
+    struct NodeIdHash {
+        size_t operator()(const NodeId& id) const;
+    };
+    using NodeIdSet = std::unordered_set<NodeId, NodeIdHash>;
+
+    struct GroupIdVectorHash {
+        size_t operator()(const GroupIdVector& v) const;
+    };
+    using InputGroupsToNodeIdMap = std::unordered_map<GroupIdVector, NodeIdSet, GroupIdVectorHash>;
 
     struct NodeTargetGroupHash {
-        size_t operator()(const ABT::reference_type& nodeRef) const {
-            return std::hash<const Node*>()(nodeRef.cast<Node>());
-        }
+        size_t operator()(const ABT::reference_type& nodeRef) const;
     };
     using NodeTargetGroupMap =
         std::unordered_map<ABT::reference_type, GroupIdType, NodeTargetGroupHash>;

@@ -89,7 +89,7 @@ inline auto makeProperty(Args&&... args) {
     return Property::make<T>(std::forward<Args>(args)...);
 }
 
-using Properties = std::map<Property::key_type, Property>;
+using Properties = std::unordered_map<Property::key_type, Property>;
 
 template <class P>
 static constexpr Property::key_type getPropertyKey() {

@@ -168,14 +168,6 @@ public:
         return _names;
     }
 
-    std::set<std::string> getSortedNames() const {
-        std::set<std::string> ordered;
-        for (const std::string& name : _names) {
-            ordered.insert(name);
-        }
-        return ordered;
-    }
-
 private:
     const NameSet _names;
 };
@@ -196,14 +188,6 @@ public:
 
     const NameSet& getNames() const {
         return _names;
-    }
-
-    std::set<std::string> getSortedNames() const {
-        std::set<std::string> ordered;
-        for (const std::string& name : _names) {
-            ordered.insert(name);
-        }
-        return ordered;
     }
 
 private:

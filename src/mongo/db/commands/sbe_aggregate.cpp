@@ -201,14 +201,14 @@ private:
     OptPhaseManager& _phaseManager;
 };
 
-static std::map<std::string, optimizer::IndexDefinition> buildIndexSpecsOptimizer(
+static std::unordered_map<std::string, optimizer::IndexDefinition> buildIndexSpecsOptimizer(
     boost::intrusive_ptr<ExpressionContext> expCtx,
     OperationContext* opCtx,
     const IndexCatalog& indexCatalog,
     const optimizer::ProjectionName& scanProjName) {
     using namespace optimizer;
 
-    std::map<std::string, IndexDefinition> result;
+    std::unordered_map<std::string, IndexDefinition> result;
     auto indexIterator = indexCatalog.getIndexIterator(opCtx, false /*includeUnfinished*/);
 
     while (indexIterator->more()) {

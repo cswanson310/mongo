@@ -257,11 +257,11 @@ const PartialSchemaRequirements& IndexDefinition::getPartialReqMap() const {
 ScanDefinition::ScanDefinition() : ScanDefinition(OptionsMapType{}, {}) {}
 
 ScanDefinition::ScanDefinition(OptionsMapType options,
-                               std::map<std::string, IndexDefinition> indexDefs)
+                               std::unordered_map<std::string, IndexDefinition> indexDefs)
     : ScanDefinition(std::move(options), std::move(indexDefs), {DistributionType::Centralized}) {}
 
 ScanDefinition::ScanDefinition(OptionsMapType options,
-                               std::map<std::string, IndexDefinition> indexDefs,
+                               std::unordered_map<std::string, IndexDefinition> indexDefs,
                                DistributionAndPaths distributionAndPaths)
     : _options(std::move(options)),
       _distributionAndPaths(std::move(distributionAndPaths)),
@@ -275,18 +275,19 @@ const DistributionAndPaths& ScanDefinition::getDistributionAndPaths() const {
     return _distributionAndPaths;
 }
 
-const std::map<std::string, IndexDefinition>& ScanDefinition::getIndexDefs() const {
+const std::unordered_map<std::string, IndexDefinition>& ScanDefinition::getIndexDefs() const {
     return _indexDefs;
 }
 
-std::map<std::string, IndexDefinition>& ScanDefinition::getIndexDefs() {
+std::unordered_map<std::string, IndexDefinition>& ScanDefinition::getIndexDefs() {
     return _indexDefs;
 }
 
-Metadata::Metadata(std::map<std::string, ScanDefinition> scanDefs)
+Metadata::Metadata(std::unordered_map<std::string, ScanDefinition> scanDefs)
     : Metadata(std::move(scanDefs), 1 /*numberOfPartitions*/) {}
 
-Metadata::Metadata(std::map<std::string, ScanDefinition> scanDefs, size_t numberOfPartitions)
+Metadata::Metadata(std::unordered_map<std::string, ScanDefinition> scanDefs,
+                   size_t numberOfPartitions)
     : _scanDefs(std::move(scanDefs)), _numberOfPartitions(numberOfPartitions) {}
 
 }  // namespace mongo::optimizer

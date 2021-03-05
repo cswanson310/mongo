@@ -127,7 +127,7 @@ public:
 
 private:
     using RewriteFn = std::function<void(LogicalRewriter* rewriter, const Memo::NodeId nodeId)>;
-    using RewriteFnMap = std::map<LogicalRewriteType, RewriteFn>;
+    using RewriteFnMap = std::unordered_map<LogicalRewriteType, RewriteFn>;
 
     /**
      * Attempts to perform a reordering rewrite specified by the R template argument.

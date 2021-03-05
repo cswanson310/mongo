@@ -93,10 +93,7 @@ struct FieldProjectionMap {
     ProjectionName _rootProjection;
     std::unordered_map<FieldNameType, ProjectionName> _fieldProjections;
 
-    bool operator==(const FieldProjectionMap& other) const {
-        return _ridProjection == other._ridProjection && _rootProjection == other._rootProjection &&
-            _fieldProjections == other._fieldProjections;
-    }
+    bool operator==(const FieldProjectionMap& other) const;
 };
 
 // Used to generate field names encoding index keys for covered indexes.
@@ -106,9 +103,7 @@ struct MemoPhysicalNodeId {
     GroupIdType _groupId;
     size_t _index;
 
-    bool operator==(const MemoPhysicalNodeId& other) const {
-        return _groupId == other._groupId && _index == other._index;
-    }
+    bool operator==(const MemoPhysicalNodeId& other) const;
 };
 
 class DebugInfo {

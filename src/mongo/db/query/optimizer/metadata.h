@@ -234,20 +234,21 @@ private:
 // read from.
 class ScanDefinition {
 public:
-    using OptionsMapType = std::map<std::string, std::string>;
+    using OptionsMapType = std::unordered_map<std::string, std::string>;
 
     ScanDefinition();
-    ScanDefinition(OptionsMapType options, std::map<std::string, IndexDefinition> indexDefs);
     ScanDefinition(OptionsMapType options,
-                   std::map<std::string, IndexDefinition> indexDefs,
+                   std::unordered_map<std::string, IndexDefinition> indexDefs);
+    ScanDefinition(OptionsMapType options,
+                   std::unordered_map<std::string, IndexDefinition> indexDefs,
                    DistributionAndPaths distributionAndPaths);
 
     const OptionsMapType& getOptionsMap() const;
 
     const DistributionAndPaths& getDistributionAndPaths() const;
 
-    const std::map<std::string, IndexDefinition>& getIndexDefs() const;
-    std::map<std::string, IndexDefinition>& getIndexDefs();
+    const std::unordered_map<std::string, IndexDefinition>& getIndexDefs() const;
+    std::unordered_map<std::string, IndexDefinition>& getIndexDefs();
 
 private:
     OptionsMapType _options;
@@ -256,14 +257,14 @@ private:
     /**
      * Indexes associated with this collection.
      */
-    std::map<std::string, IndexDefinition> _indexDefs;
+    std::unordered_map<std::string, IndexDefinition> _indexDefs;
 };
 
 struct Metadata {
-    Metadata(std::map<std::string, ScanDefinition> scanDefs);
-    Metadata(std::map<std::string, ScanDefinition> scanDefs, size_t numberOfPartitions);
+    Metadata(std::unordered_map<std::string, ScanDefinition> scanDefs);
+    Metadata(std::unordered_map<std::string, ScanDefinition> scanDefs, size_t numberOfPartitions);
 
-    std::map<std::string, ScanDefinition> _scanDefs;
+    std::unordered_map<std::string, ScanDefinition> _scanDefs;
 
     // TODO: generalize cluster spec and hints.
 

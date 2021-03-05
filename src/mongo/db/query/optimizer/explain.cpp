@@ -895,8 +895,13 @@ public:
         ExplainPrinter propertiesPrinter;
         propertiesPrinter << description << ":";
 
-        PropPrintVisitor visitor(propertiesPrinter);
+        std::map<properties::Property::key_type, properties::Property> ordered;
         for (const auto& entry : props) {
+            ordered.template insert(entry);
+        }
+
+        PropPrintVisitor visitor(propertiesPrinter);
+        for (const auto& entry : ordered) {
             entry.second.visit(visitor);
         }
 
@@ -1039,11 +1044,15 @@ public:
         return printer;
     }
 
-    ExplainPrinter transport(const PathDrop& path) {
-        ExplainPrinter printer("PathDrop [");
-
+    static void printPathProjections(ExplainPrinter& printer,
+                                     const std::unordered_set<std::string>& names) {
         bool first = true;
-        for (const std::string& s : path.getSortedNames()) {
+        std::set<std::string> ordered;
+        for (const std::string& s : names) {
+            ordered.insert(s);
+        }
+
+        for (const std::string& s : ordered) {
             if (first) {
                 first = false;
             } else {
@@ -1053,23 +1062,17 @@ public:
         }
 
         printer << "]";
+    }
+
+    ExplainPrinter transport(const PathDrop& path) {
+        ExplainPrinter printer("PathDrop [");
+        printPathProjections(printer, path.getNames());
         return printer;
     }
 
     ExplainPrinter transport(const PathKeep& path) {
         ExplainPrinter printer("PathKeep [");
-
-        bool first = true;
-        for (const std::string& s : path.getSortedNames()) {
-            if (first) {
-                first = false;
-            } else {
-                printer << ", ";
-            }
-            printer << s;
-        }
-
-        printer << "]";
+        printPathProjections(printer, path.getNames());
         return printer;
     }
 

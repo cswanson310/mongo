@@ -103,6 +103,15 @@ const ProjectionNameVector& ProjectionNameOrderPreservingSet::getVector() const 
     return _vector;
 }
 
+bool FieldProjectionMap::operator==(const FieldProjectionMap& other) const {
+    return _ridProjection == other._ridProjection && _rootProjection == other._rootProjection &&
+        _fieldProjections == other._fieldProjections;
+}
+
+bool MemoPhysicalNodeId::operator==(const MemoPhysicalNodeId& other) const {
+    return _groupId == other._groupId && _index == other._index;
+}
+
 DebugInfo DebugInfo::kDefaultForTests =
     DebugInfo(true, DebugInfo::kDefaultDebugLevelForTests, DebugInfo::kIterationLimitForTests);
 DebugInfo DebugInfo::kDefaultForProd = DebugInfo(false, 0, -1);

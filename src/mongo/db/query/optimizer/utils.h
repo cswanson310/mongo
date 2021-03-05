@@ -64,7 +64,7 @@ public:
     std::string getNextId(const std::string& key);
 
 private:
-    std::map<std::string, int> _idCounterPerKey;
+    std::unordered_map<std::string, int> _idCounterPerKey;
 };
 
 ProjectionNameOrderedSet convertToOrderedSet(ProjectionNameSet unordered);
