@@ -349,7 +349,7 @@ public:
         printer << "indexDefName: '" << spec.getIndexDefName() << "', ";
 
         printer << "intervals: {";
-        printIntervalDNF(printer, spec.getIntervals());
+        printInterval(printer, spec.getInterval());
         printer << "}";
 
         if (spec.isReverseOrder()) {

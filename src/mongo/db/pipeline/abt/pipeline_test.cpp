@@ -1282,7 +1282,7 @@ TEST(ABTTranslate, MatchIndex) {
         "|   RefBlock: \n"
         "|       Variable [rid_0]\n"
         "IndexScan [{'<rid>': 'rid_0'}, scanDefName: 'collection', indexDefName: 'index1', "
-        "intervals: {{{['Const [10]', 'Const [10]']}}}]\n"
+        "intervals: {['Const [10]', 'Const [10]']}]\n"
         "    BindBlock:\n"
         "        [rid_0]\n"
         "            Source []\n",
@@ -1365,7 +1365,7 @@ TEST(ABTTranslate, MatchSortIndex) {
         "|   RefBlock: \n"
         "|       Variable [rid_0]\n"
         "IndexScan [{'<rid>': 'rid_0'}, scanDefName: 'collection', indexDefName: 'index1', "
-        "intervals: {{{['Const [10]', 'Const [10]']}}}]\n"
+        "intervals: {['Const [10]', 'Const [10]']}]\n"
         "    BindBlock:\n"
         "        [rid_0]\n"
         "            Source []\n",
@@ -1428,8 +1428,16 @@ TEST(ABTTranslate, RangeIndex) {
         "|   |           Source []\n"
         "|   RefBlock: \n"
         "|       Variable [rid_0]\n"
+        "HashJoin [joinType: Inner]\n"
+        "|   |   Condition\n"
+        "|   |       rid_0 = rid_1\n"
+        "|   IndexScan [{'<rid>': 'rid_1'}, scanDefName: 'collection', indexDefName: 'index1', "
+        "intervals: {('-Inf', 'Const [90]')}]\n"
+        "|       BindBlock:\n"
+        "|           [rid_1]\n"
+        "|               Source []\n"
         "IndexScan [{'<rid>': 'rid_0'}, scanDefName: 'collection', indexDefName: 'index1', "
-        "intervals: {{{('Const [70]', '+Inf')} ^ {('-Inf', 'Const [90]')}}}]\n"
+        "intervals: {('Const [70]', '+Inf')}]\n"
         "    BindBlock:\n"
         "        [rid_0]\n"
         "            Source []\n",
@@ -1495,7 +1503,7 @@ TEST(ABTTranslate, Index1) {
             "|   RefBlock: \n"
             "|       Variable [rid_0]\n"
             "IndexScan [{'<rid>': 'rid_0'}, scanDefName: 'collection', indexDefName: 'index1', "
-            "intervals: {{{['Const [2]', 'Const [2]'], ['Const [2]', 'Const [2]']}}}]\n"
+            "intervals: {['Const [2]', 'Const [2]'], ['Const [2]', 'Const [2]']}]\n"
             "    BindBlock:\n"
             "        [rid_0]\n"
             "            Source []\n",
@@ -1538,7 +1546,7 @@ TEST(ABTTranslate, Index1) {
             "|   RefBlock: \n"
             "|       Variable [rid_2]\n"
             "IndexScan [{'<rid>': 'rid_2'}, scanDefName: 'collection', indexDefName: 'index1', "
-            "intervals: {{{['Const [2]', 'Const [2]']}}}]\n"
+            "intervals: {['Const [2]', 'Const [2]']}]\n"
             "    BindBlock:\n"
             "        [rid_2]\n"
             "            Source []\n",

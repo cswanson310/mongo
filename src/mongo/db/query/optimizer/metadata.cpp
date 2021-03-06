@@ -166,16 +166,16 @@ bool CandidateIndexEntry::operator==(const CandidateIndexEntry& other) const {
 
 IndexSpecification::IndexSpecification(std::string scanDefName,
                                        std::string indexDefName,
-                                       MultiKeyIntervalRequirementDNF intervals,
+                                       MultiKeyIntervalRequirement interval,
                                        bool reverseOrder)
     : _scanDefName(std::move(scanDefName)),
       _indexDefName(std::move(indexDefName)),
-      _intervals(std::move(intervals)),
+      _interval(std::move(interval)),
       _reverseOrder(reverseOrder) {}
 
 bool IndexSpecification::operator==(const IndexSpecification& other) const {
     return _scanDefName == other._scanDefName && _indexDefName == other._indexDefName &&
-        _intervals == other._intervals && _reverseOrder == other._reverseOrder;
+        _interval == other._interval && _reverseOrder == other._reverseOrder;
 }
 
 const std::string& IndexSpecification::getScanDefName() const {
@@ -186,12 +186,8 @@ const std::string& IndexSpecification::getIndexDefName() const {
     return _indexDefName;
 }
 
-const MultiKeyIntervalRequirementDNF& IndexSpecification::getIntervals() const {
-    return _intervals;
-}
-
-MultiKeyIntervalRequirementDNF& IndexSpecification::getIntervals() {
-    return _intervals;
+const MultiKeyIntervalRequirement& IndexSpecification::getInterval() const {
+    return _interval;
 }
 
 bool IndexSpecification::isReverseOrder() const {

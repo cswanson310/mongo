@@ -566,7 +566,9 @@ std::unique_ptr<sbe::PlanStage> SBENodeLowering::walk(const UnionNode& n,
 
     sbe::value::SlotVector outputVals;
     for (const auto& name : names) {
-        _slotMap.emplace(name, _slotIdGenerator.generate());
+        const auto outputSlot = _slotIdGenerator.generate();
+        _slotMap.emplace(name, outputSlot);
+        outputVals.push_back(outputSlot);
     }
 
     return sbe::makeS<sbe::UnionStage>(
@@ -763,10 +765,10 @@ std::unique_ptr<sbe::EExpression> SBENodeLowering::convertBoundsToExpr(
     return sbe::makeE<sbe::EFunction>("ks", std::move(ksFnArgs));
 }
 
-std::unique_ptr<sbe::PlanStage> SBENodeLowering::lowerIndexScanNodeSimpleBound(
-    const IndexScanNode& n, const MultiKeyIntervalRequirement& interval) {
+std::unique_ptr<sbe::PlanStage> SBENodeLowering::walk(const IndexScanNode& n, const ABT&) {
     const auto& fieldProjectionMap = n.getFieldProjectionMap();
     const auto& indexSpec = n.getIndexSpecification();
+    const auto& interval = indexSpec.getInterval();
 
     const std::string& indexDefName = n.getIndexSpecification().getIndexDefName();
     const auto& metadata = _phaseManager.getMetadata();
@@ -848,72 +850,6 @@ std::unique_ptr<sbe::PlanStage> SBENodeLowering::lowerIndexScanNodeSimpleBound(
                                           nullptr,
                                           kEmptyPlanNodeId);
 }
-
-std::unique_ptr<sbe::PlanStage> SBENodeLowering::walk(const IndexScanNode& n, const ABT&) {
-    const auto& intervals = n.getIndexSpecification().getIntervals();
-    if (intervals.size() == 1 && intervals.at(0).size() == 1) {
-        // Translate simple bound directly.
-        return lowerIndexScanNodeSimpleBound(n, intervals.at(0).at(0));
-    }
-
-    const IndexSpecification& indexSpec = n.getIndexSpecification();
-    const FieldProjectionMap& fieldProjectionMap = n.getFieldProjectionMap();
-    auto& prefixId = _phaseManager.getPrefixId();
-
-    ProjectionNameVector unionProjections;
-    for (const auto& entry : fieldProjectionMap._fieldProjections) {
-        unionProjections.push_back(entry.second);
-    }
-
-    const ProjectionName rightRIDProjectionName = prefixId.getNextId("rid");
-    ProjectionName leftRIDProjectionName;
-    if (fieldProjectionMap._ridProjection.empty()) {
-        leftRIDProjectionName = prefixId.getNextId("rid");
-    } else {
-        leftRIDProjectionName = fieldProjectionMap._ridProjection;
-        unionProjections.push_back(fieldProjectionMap._ridProjection);
-    }
-
-    // Decompose compound bound into a series of unions and intersections of simple bounds.
-    ABTVector results;
-    for (const auto& conjunction : intervals) {
-        ABT conjunctionABT = make<Blackhole>();
-
-        FieldProjectionMap localMap = fieldProjectionMap;
-        const bool singularConjunction = conjunction.size() == 1;
-
-        bool first = true;
-        for (const auto& interval : conjunction) {
-            if (!singularConjunction) {
-                localMap._ridProjection = first ? leftRIDProjectionName : rightRIDProjectionName;
-            }
-
-            ABT node = make<IndexScanNode>(std::move(localMap),
-                                           IndexSpecification{indexSpec.getScanDefName(),
-                                                              indexSpec.getIndexDefName(),
-                                                              {{interval}},
-                                                              indexSpec.isReverseOrder()});
-            if (first) {
-                first = false;
-                conjunctionABT = std::move(node);
-            } else {
-                ABT filter = make<EvalFilter>(
-                    make<PathCompare>(Operations::Eq, make<Variable>(leftRIDProjectionName)),
-                    make<Variable>(rightRIDProjectionName));
-                conjunctionABT = make<BinaryJoinNode>(JoinType::Inner,
-                                                      ProjectionNameSet{},
-                                                      std::move(filter),
-                                                      std::move(conjunctionABT),
-                                                      std::move(node));
-            }
-        }
-
-        results.emplace_back(std::move(conjunctionABT));
-    }
-
-    ABT unionABT = make<UnionNode>(std::move(unionProjections), std::move(results));
-    return optimize(unionABT);
-};
 
 std::unique_ptr<sbe::PlanStage> SBENodeLowering::walk(const SeekNode& n,
                                                       const ABT& /*binds*/,

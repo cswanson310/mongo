@@ -179,8 +179,6 @@ private:
         const bool isLower,
         const IndexDefinition& indexDef,
         const MultiKeyIntervalRequirement& interval);
-    std::unique_ptr<sbe::PlanStage> lowerIndexScanNodeSimpleBound(
-        const IndexScanNode& n, const MultiKeyIntervalRequirement& interval);
 
     std::unique_ptr<sbe::PlanStage> generateInternal(const ABT& n);
 

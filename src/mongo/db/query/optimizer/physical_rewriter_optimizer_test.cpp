@@ -573,7 +573,7 @@ TEST(PhysOptimizer, FilterIndexing) {
             "|   RefBlock: \n"
             "|       Variable [rid_0]\n"
             "IndexScan [{'<rid>': 'rid_0'}, scanDefName: 'c1', indexDefName: 'index1', intervals: "
-            "{{{['Const [1]', 'Const [1]']}}}]\n"
+            "{['Const [1]', 'Const [1]']}]\n"
             "    BindBlock:\n"
             "        [rid_0]\n"
             "            Source []\n",
@@ -652,7 +652,7 @@ TEST(PhysOptimizer, CoveredScan) {
         "|   RefBlock: \n"
         "|       Variable [pa]\n"
         "IndexScan [{'<indexKey> 0': 'pa'}, scanDefName: 'c1', indexDefName: 'index1', intervals: "
-        "{{{('-Inf', '+Inf')}}}]\n"
+        "{('-Inf', '+Inf')}]\n"
         "    BindBlock:\n"
         "        [pa]\n"
         "            Source []\n",
@@ -704,7 +704,7 @@ TEST(PhysOptimizer, EvalIndexing) {
             "|   RefBlock: \n"
             "|       Variable [pa]\n"
             "IndexScan [{'<indexKey> 0': 'pa'}, scanDefName: 'c1', indexDefName: 'index1', "
-            "intervals: {{{('Const [1]', '+Inf')}}}]\n"
+            "intervals: {('Const [1]', '+Inf')}]\n"
             "    BindBlock:\n"
             "        [pa]\n"
             "            Source []\n",
@@ -739,7 +739,7 @@ TEST(PhysOptimizer, EvalIndexing) {
             "|   RefBlock: \n"
             "|       Variable [pa]\n"
             "IndexScan [{'<indexKey> 0': 'pa'}, scanDefName: 'c1', indexDefName: 'index1', "
-            "intervals: {{{('Const [1]', '+Inf')}}}]\n"
+            "intervals: {('Const [1]', '+Inf')}]\n"
             "    BindBlock:\n"
             "        [pa]\n"
             "            Source []\n",
@@ -798,7 +798,7 @@ TEST(PhysOptimizer, EvalIndexing1) {
         "|   RefBlock: \n"
         "|       Variable [rid_0]\n"
         "IndexScan [{'<indexKey> 0': 'pa', '<rid>': 'rid_0'}, scanDefName: 'c1', indexDefName: "
-        "'index1', intervals: {{{['Const [1]', 'Const [1]']}}}]\n"
+        "'index1', intervals: {['Const [1]', 'Const [1]']}]\n"
         "    BindBlock:\n"
         "        [pa]\n"
         "            Source []\n"
@@ -875,14 +875,14 @@ TEST(PhysOptimizer, MultiKeyIndex) {
         "|   |   Condition\n"
         "|   |       rid_0 = rid_1\n"
         "|   IndexScan [{'<indexKey> 0': 'pb', '<rid>': 'rid_1'}, scanDefName: 'c1', indexDefName: "
-        "'index2', intervals: {{{('Const [2]', '+Inf')}}}, reversed.]\n"
+        "'index2', intervals: {('Const [2]', '+Inf')}, reversed.]\n"
         "|       BindBlock:\n"
         "|           [pb]\n"
         "|               Source []\n"
         "|           [rid_1]\n"
         "|               Source []\n"
         "IndexScan [{'<indexKey> 0': 'pa', '<rid>': 'rid_0'}, scanDefName: 'c1', indexDefName: "
-        "'index1', intervals: {{{['Const [1]', 'Const [1]']}}}]\n"
+        "'index1', intervals: {['Const [1]', 'Const [1]']}]\n"
         "    BindBlock:\n"
         "        [pa]\n"
         "            Source []\n"
@@ -972,15 +972,15 @@ TEST(PhysOptimizer, CompoundIndex1) {
         "|   |   Condition\n"
         "|   |       rid_0 = rid_1\n"
         "|   IndexScan [{'<indexKey> 0': 'pb', '<rid>': 'rid_1'}, scanDefName: 'c1', indexDefName: "
-        "'index2', intervals: {{{['Const [2]', 'Const [2]']}}}]\n"
+        "'index2', intervals: {['Const [2]', 'Const [2]']}]\n"
         "|       BindBlock:\n"
         "|           [pb]\n"
         "|               Source []\n"
         "|           [rid_1]\n"
         "|               Source []\n"
         "IndexScan [{'<indexKey> 0': 'pa', '<indexKey> 1': 'pc', '<rid>': 'rid_0'}, scanDefName: "
-        "'c1', indexDefName: 'index1', intervals: {{{['Const [1]', 'Const [1]'], ['Const [3]', "
-        "'Const [3]']}}}]\n"
+        "'c1', indexDefName: 'index1', intervals: {['Const [1]', 'Const [1]'], ['Const [3]', "
+        "'Const [3]']}]\n"
         "    BindBlock:\n"
         "        [pa]\n"
         "            Source []\n"
@@ -1022,7 +1022,7 @@ TEST(PhysOptimizer, IndexBoundsIntersect) {
 
     ABT optimized = rootNode;
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(9, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(7, phaseManager.getPhysicalPlanExplorationCount());
 
     ASSERT_EQ(
         "RootNode []\n"
@@ -1038,8 +1038,16 @@ TEST(PhysOptimizer, IndexBoundsIntersect) {
         "|   |           Source []\n"
         "|   RefBlock: \n"
         "|       Variable [rid_0]\n"
+        "HashJoin [joinType: Inner]\n"
+        "|   |   Condition\n"
+        "|   |       rid_0 = rid_1\n"
+        "|   IndexScan [{'<rid>': 'rid_1'}, scanDefName: 'c1', indexDefName: 'index1', intervals: "
+        "{('-Inf', 'Const [90]')}]\n"
+        "|       BindBlock:\n"
+        "|           [rid_1]\n"
+        "|               Source []\n"
         "IndexScan [{'<rid>': 'rid_0'}, scanDefName: 'c1', indexDefName: 'index1', intervals: "
-        "{{{('Const [70]', '+Inf')} ^ {('-Inf', 'Const [90]')}}}]\n"
+        "{('Const [70]', '+Inf')}]\n"
         "    BindBlock:\n"
         "        [rid_0]\n"
         "            Source []\n",
@@ -1458,7 +1466,7 @@ TEST(PhysOptimizer, PartialIndex) {
         "|   RefBlock: \n"
         "|       Variable [rid_0]\n"
         "IndexScan [{'<rid>': 'rid_0'}, scanDefName: 'c1', indexDefName: 'index1', intervals: "
-        "{{{['Const [3]', 'Const [3]']}}}]\n"
+        "{['Const [3]', 'Const [3]']}]\n"
         "    BindBlock:\n"
         "        [rid_0]\n"
         "            Source []\n",

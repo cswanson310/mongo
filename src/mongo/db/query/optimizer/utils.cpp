@@ -763,23 +763,21 @@ public:
     /**
      * Physical delegator node.
      */
-    void transport(ABT& n, const MemoPhysicalDelegatorNode& node) {
-        const MemoPhysicalNodeId id = node.getNodeId();
-        n = extract(id);
-        _nodeToPhysPropsMap.emplace(n.cast<Node>(), id);
+    void transport(ABT& n, const MemoPhysicalDelegatorNode& node, const MemoPhysicalNodeId /*id*/) {
+        n = extract(node.getNodeId());
     }
 
     /**
      * Other ABT types.
      */
     template <typename T, typename... Ts>
-    void transport(ABT& /*n*/, const T& /*node*/, Ts&&...) {
-        // noop
+    void transport(ABT& n, const T& /*node*/, const MemoPhysicalNodeId id, Ts&&...) {
+        _nodeToPhysPropsMap.emplace(n.cast<Node>(), id);
     }
 
     ABT extract(const MemoPhysicalNodeId nodeId) {
         ABT node = _memo.getGroup(nodeId._groupId)._physicalNodes.at(nodeId._index)->_node;
-        algebra::transport<true>(node, *this);
+        algebra::transport<true>(node, *this, nodeId);
         return node;
     }
 

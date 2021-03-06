@@ -156,7 +156,7 @@ class IndexSpecification {
 public:
     IndexSpecification(std::string scanDefName,
                        std::string indexDefName,
-                       MultiKeyIntervalRequirementDNF intervals,
+                       MultiKeyIntervalRequirement interval,
                        bool reverseOrder);
 
     bool operator==(const IndexSpecification& other) const;
@@ -164,8 +164,7 @@ public:
     const std::string& getScanDefName() const;
     const std::string& getIndexDefName() const;
 
-    const MultiKeyIntervalRequirementDNF& getIntervals() const;
-    MultiKeyIntervalRequirementDNF& getIntervals();
+    const MultiKeyIntervalRequirement& getInterval() const;
 
     bool isReverseOrder() const;
 
@@ -176,8 +175,8 @@ private:
     // The name of the index.
     const std::string _indexDefName;
 
-    // The index intervals in DNF form.
-    MultiKeyIntervalRequirementDNF _intervals;
+    // The index intervals.
+    MultiKeyIntervalRequirement _interval;
 
     // Do we reverse the index order.
     const bool _reverseOrder;

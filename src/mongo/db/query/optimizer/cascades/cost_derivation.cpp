@@ -33,6 +33,7 @@ namespace mongo::optimizer::cascades {
 
 using namespace properties;
 
+// TODO: implement as transport.
 class CostDerivation {
     // TODO: calibration?
     static constexpr double kScanInitialCost = 100000.0;

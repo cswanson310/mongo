@@ -655,22 +655,85 @@ public:
                     continue;
                 }
 
+                uassert(0,
+                        "Either forward or backward direction must be available.",
+                        availableDirections._forward || availableDirections._backward);
+
                 auto indexProjectionMap = candidateIndexEntry._fieldProjectionMap;
                 if (!ridProjectionName.empty()) {
                     indexProjectionMap._ridProjection = ridProjectionName;
                 }
 
-                uassert(0,
-                        "Either forward or backward direction must be available.",
-                        availableDirections._forward || availableDirections._backward);
-                ABT physicalIndexScan =
-                    make<IndexScanNode>(std::move(indexProjectionMap),
-                                        IndexSpecification{scanDefName,
-                                                           indexDefName,
-                                                           candidateIndexEntry._intervals,
-                                                           !availableDirections._forward});
+                ProjectionNameVector unionProjections;
+                if (!indexProjectionMap._ridProjection.empty()) {
+                    unionProjections.push_back(indexProjectionMap._ridProjection);
+                }
+                for (const auto& entry : indexProjectionMap._fieldProjections) {
+                    unionProjections.push_back(entry.second);
+                }
 
-                optimizeChild<IndexScanNode>(_queue, std::move(physicalIndexScan));
+                // Decompose compound bound into a series of unions and intersections of simple
+                // bounds.
+                ABTVector disjuncts;
+                bool firstConjunction = true;
+                bool firstConjunctionSingular = true;
+                for (const auto& conjunction : candidateIndexEntry._intervals) {
+                    uassert(0, "Empty conjunction", !conjunction.empty());
+                    const bool isSingular = conjunction.size() == 1;
+
+                    ABT conjunctionABT = make<Blackhole>();
+                    FieldProjectionMap localMap = indexProjectionMap;
+
+                    bool first = true;
+                    for (const auto& interval : conjunction) {
+                        if (!isSingular) {
+                            localMap._ridProjection = first
+                                ? (localMap._ridProjection.empty()
+                                       ? _rewriter._leftRIDProjectionName
+                                       : localMap._ridProjection)
+                                : _rewriter._rightRIDProjectionName;
+                        }
+
+                        ABT physicalIndexScan =
+                            make<IndexScanNode>(std::move(localMap),
+                                                IndexSpecification{scanDefName,
+                                                                   indexDefName,
+                                                                   {{interval}},
+                                                                   !availableDirections._forward});
+                        if (first) {
+                            first = false;
+                            conjunctionABT = std::move(physicalIndexScan);
+                        } else {
+                            if (firstConjunction) {
+                                firstConjunctionSingular = false;
+                            }
+                            conjunctionABT = make<HashJoinNode>(
+                                JoinType::Inner,
+                                ProjectionNameVector{_rewriter._leftRIDProjectionName},
+                                ProjectionNameVector{_rewriter._rightRIDProjectionName},
+                                std::move(conjunctionABT),
+                                std::move(physicalIndexScan));
+                        }
+                    }
+
+                    firstConjunction = false;
+                    disjuncts.emplace_back(std::move(conjunctionABT));
+                }
+
+                if (disjuncts.size() == 1) {
+                    ABT conjunctionABT = std::move(disjuncts.front());
+                    if (firstConjunctionSingular) {
+                        uassert(0, "Invalid node type", conjunctionABT.is<IndexScanNode>());
+                        optimizeChild<IndexScanNode>(_queue, std::move(conjunctionABT));
+                    } else {
+                        uassert(0, "Invalid node type", conjunctionABT.is<HashJoinNode>());
+                        optimizeChild<HashJoinNode>(_queue, std::move(conjunctionABT));
+                    }
+                } else {
+                    ABT unionABT =
+                        make<UnionNode>(std::move(unionProjections), std::move(disjuncts));
+                    optimizeChild<UnionNode>(_queue, std::move(unionABT));
+                }
             }
         } else if (!hasProperPath) {
             bool canUseParallelScan = false;
