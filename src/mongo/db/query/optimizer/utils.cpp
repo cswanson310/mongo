@@ -771,8 +771,10 @@ public:
      * Other ABT types.
      */
     template <typename T, typename... Ts>
-    void transport(ABT& n, const T& /*node*/, const MemoPhysicalNodeId id, Ts&&...) {
-        _nodeToPhysPropsMap.emplace(n.cast<Node>(), id);
+    void transport(ABT& /*n*/, const T& node, const MemoPhysicalNodeId id, Ts&&...) {
+        if constexpr (std::is_base_of_v<Node, T>) {
+            _nodeToPhysPropsMap.emplace(&node, id);
+        }
     }
 
     ABT extract(const MemoPhysicalNodeId nodeId) {
