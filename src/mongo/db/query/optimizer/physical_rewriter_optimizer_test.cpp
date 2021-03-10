@@ -279,10 +279,7 @@ TEST(PhysOptimizer, GroupBy) {
         "|   |       RefBlock: \n"
         "|   |           Variable [a]\n"
         "|   aggregations:\n"
-        "|       BindBlock:\n"
-        "|           [c]\n"
-        "|               Source []\n"
-        "|       RefBlock: \n"
+        "|       [c]\n"
         "|           Variable [b]\n"
         "Evaluation []\n"
         "|   BindBlock:\n"
@@ -347,10 +344,7 @@ TEST(PhysOptimizer, GroupBy1) {
         "|   |   groupings:\n"
         "|   |       RefBlock: \n"
         "|   aggregations:\n"
-        "|       BindBlock:\n"
-        "|           [pb]\n"
-        "|               Source []\n"
-        "|       RefBlock: \n"
+        "|       [pb]\n"
         "|           Variable [pa]\n"
         "Evaluation []\n"
         "|   BindBlock:\n"
@@ -573,7 +567,7 @@ TEST(PhysOptimizer, FilterIndexing) {
             "|   RefBlock: \n"
             "|       Variable [rid_0]\n"
             "IndexScan [{'<rid>': 'rid_0'}, scanDefName: 'c1', indexDefName: 'index1', intervals: "
-            "{['Const [1]', 'Const [1]']}]\n"
+            "{{{['Const [1]', 'Const [1]']}}}]\n"
             "    BindBlock:\n"
             "        [rid_0]\n"
             "            Source []\n",
@@ -652,7 +646,7 @@ TEST(PhysOptimizer, CoveredScan) {
         "|   RefBlock: \n"
         "|       Variable [pa]\n"
         "IndexScan [{'<indexKey> 0': 'pa'}, scanDefName: 'c1', indexDefName: 'index1', intervals: "
-        "{('-Inf', '+Inf')}]\n"
+        "{{{('-Inf', '+Inf')}}}]\n"
         "    BindBlock:\n"
         "        [pa]\n"
         "            Source []\n",
@@ -704,7 +698,7 @@ TEST(PhysOptimizer, EvalIndexing) {
             "|   RefBlock: \n"
             "|       Variable [pa]\n"
             "IndexScan [{'<indexKey> 0': 'pa'}, scanDefName: 'c1', indexDefName: 'index1', "
-            "intervals: {('Const [1]', '+Inf')}]\n"
+            "intervals: {{{('Const [1]', '+Inf')}}}]\n"
             "    BindBlock:\n"
             "        [pa]\n"
             "            Source []\n",
@@ -739,7 +733,7 @@ TEST(PhysOptimizer, EvalIndexing) {
             "|   RefBlock: \n"
             "|       Variable [pa]\n"
             "IndexScan [{'<indexKey> 0': 'pa'}, scanDefName: 'c1', indexDefName: 'index1', "
-            "intervals: {('Const [1]', '+Inf')}]\n"
+            "intervals: {{{('Const [1]', '+Inf')}}}]\n"
             "    BindBlock:\n"
             "        [pa]\n"
             "            Source []\n",
@@ -798,7 +792,7 @@ TEST(PhysOptimizer, EvalIndexing1) {
         "|   RefBlock: \n"
         "|       Variable [rid_0]\n"
         "IndexScan [{'<indexKey> 0': 'pa', '<rid>': 'rid_0'}, scanDefName: 'c1', indexDefName: "
-        "'index1', intervals: {['Const [1]', 'Const [1]']}]\n"
+        "'index1', intervals: {{{['Const [1]', 'Const [1]']}}}]\n"
         "    BindBlock:\n"
         "        [pa]\n"
         "            Source []\n"
@@ -875,14 +869,14 @@ TEST(PhysOptimizer, MultiKeyIndex) {
         "|   |   Condition\n"
         "|   |       rid_0 = rid_1\n"
         "|   IndexScan [{'<indexKey> 0': 'pb', '<rid>': 'rid_1'}, scanDefName: 'c1', indexDefName: "
-        "'index2', intervals: {('Const [2]', '+Inf')}, reversed.]\n"
+        "'index2', intervals: {{{('Const [2]', '+Inf')}}}, reversed.]\n"
         "|       BindBlock:\n"
         "|           [pb]\n"
         "|               Source []\n"
         "|           [rid_1]\n"
         "|               Source []\n"
         "IndexScan [{'<indexKey> 0': 'pa', '<rid>': 'rid_0'}, scanDefName: 'c1', indexDefName: "
-        "'index1', intervals: {['Const [1]', 'Const [1]']}]\n"
+        "'index1', intervals: {{{['Const [1]', 'Const [1]']}}}]\n"
         "    BindBlock:\n"
         "        [pa]\n"
         "            Source []\n"
@@ -972,15 +966,15 @@ TEST(PhysOptimizer, CompoundIndex1) {
         "|   |   Condition\n"
         "|   |       rid_0 = rid_1\n"
         "|   IndexScan [{'<indexKey> 0': 'pb', '<rid>': 'rid_1'}, scanDefName: 'c1', indexDefName: "
-        "'index2', intervals: {['Const [2]', 'Const [2]']}]\n"
+        "'index2', intervals: {{{['Const [2]', 'Const [2]']}}}]\n"
         "|       BindBlock:\n"
         "|           [pb]\n"
         "|               Source []\n"
         "|           [rid_1]\n"
         "|               Source []\n"
         "IndexScan [{'<indexKey> 0': 'pa', '<indexKey> 1': 'pc', '<rid>': 'rid_0'}, scanDefName: "
-        "'c1', indexDefName: 'index1', intervals: {['Const [1]', 'Const [1]'], ['Const [3]', "
-        "'Const [3]']}]\n"
+        "'c1', indexDefName: 'index1', intervals: {{{['Const [1]', 'Const [1]'], ['Const [3]', "
+        "'Const [3]']}}}]\n"
         "    BindBlock:\n"
         "        [pa]\n"
         "            Source []\n"
@@ -997,18 +991,28 @@ TEST(PhysOptimizer, IndexBoundsIntersect) {
 
     ABT scanNode = make<ScanNode>("root", "c1");
 
-    ABT filterNode = make<FilterNode>(
-        make<EvalFilter>(
-            make<PathComposeM>(make<PathGet>("a",
-                                             make<PathTraverse>(make<PathCompare>(
-                                                 Operations::Gt, Constant::int64(70)))),
-                               make<PathGet>("a",
-                                             make<PathTraverse>(make<PathCompare>(
-                                                 Operations::Lt, Constant::int64(90))))),
-            make<Variable>("root")),
+    ABT evalNode = make<EvaluationNode>(
+        "pb",
+        make<EvalPath>(make<PathGet>("b", make<PathTraverse>(make<PathIdentity>())),
+                       make<Variable>("root")),
         std::move(scanNode));
 
-    ABT rootNode = make<RootNode>(properties::ProjectionRequirement{ProjectionNameVector{"root"}},
+    ABT filterNode = make<FilterNode>(
+        make<EvalFilter>(
+            make<PathComposeA>(
+                make<PathComposeM>(make<PathGet>("a",
+                                                 make<PathTraverse>(make<PathCompare>(
+                                                     Operations::Gt, Constant::int64(70)))),
+                                   make<PathGet>("a",
+                                                 make<PathTraverse>(make<PathCompare>(
+                                                     Operations::Lt, Constant::int64(90))))),
+                make<PathGet>(
+                    "a",
+                    make<PathTraverse>(make<PathCompare>(Operations::Eq, Constant::int64(100))))),
+            make<Variable>("root")),
+        std::move(evalNode));
+
+    ABT rootNode = make<RootNode>(properties::ProjectionRequirement{ProjectionNameVector{"pb"}},
                                   std::move(filterNode));
 
     OptPhaseManager phaseManager(
@@ -1017,39 +1021,78 @@ TEST(PhysOptimizer, IndexBoundsIntersect) {
         prefixId,
         {{{"c1",
            ScanDefinition{{},
-                          {{"index1", IndexDefinition{{{{{"a"}}, CollationOp::Ascending}}}}}}}}},
+                          {{"index1",
+                            IndexDefinition{{{{{"a"}}, CollationOp::Ascending},
+                                             {{{"b"}}, CollationOp::Ascending}}}}}}}}},
         {true /*debugMode*/, 2 /*debugLevel*/, DebugInfo::kIterationLimitForTests});
 
     ABT optimized = rootNode;
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(7, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(6, phaseManager.getPhysicalPlanExplorationCount());
 
     ASSERT_EQ(
         "RootNode []\n"
         "|   |   projections:\n"
-        "|   |       root\n"
+        "|   |       pb\n"
         "|   RefBlock: \n"
-        "|       Variable [root]\n"
-        "BinaryJoin [joinType: Inner, {rid_0}]\n"
-        "|   |   Const [true]\n"
-        "|   Seek [ridProjection: 'rid_0', {'<root>': 'root'}, 'c1']\n"
+        "|       Variable [pb]\n"
+        "GroupBy []\n"
+        "|   |   groupings:\n"
+        "|   |       RefBlock: \n"
+        "|   |           Variable [rid_2]\n"
+        "|   aggregations:\n"
+        "|       [pb]\n"
+        "|           FunctionCall [$first]\n"
+        "|           Variable [outer_0]\n"
+        "Union []\n"
         "|   |   BindBlock:\n"
-        "|   |       [root]\n"
+        "|   |       [outer_0]\n"
         "|   |           Source []\n"
-        "|   RefBlock: \n"
-        "|       Variable [rid_0]\n"
-        "HashJoin [joinType: Inner]\n"
-        "|   |   Condition\n"
-        "|   |       rid_0 = rid_1\n"
-        "|   IndexScan [{'<rid>': 'rid_1'}, scanDefName: 'c1', indexDefName: 'index1', intervals: "
-        "{('-Inf', 'Const [90]')}]\n"
+        "|   |       [rid_2]\n"
+        "|   |           Source []\n"
+        "|   Filter []\n"
+        "|   |   EvalFilter []\n"
+        "|   |   |   PathCompare [Eq] \n"
+        "|   |   |   Const [2]\n"
+        "|   |   Variable [count_0]\n"
+        "|   GroupBy []\n"
+        "|   |   |   groupings:\n"
+        "|   |   |       RefBlock: \n"
+        "|   |   |           Variable [rid_2]\n"
+        "|   |   aggregations:\n"
+        "|   |       [count_0]\n"
+        "|   |           FunctionCall [$sum]\n"
+        "|   |           Const [1]\n"
+        "|   |       [outer_0]\n"
+        "|   |           FunctionCall [$first]\n"
+        "|   |           Variable [inner_0]\n"
+        "|   Union []\n"
+        "|   |   |   BindBlock:\n"
+        "|   |   |       [inner_0]\n"
+        "|   |   |           Source []\n"
+        "|   |   |       [rid_2]\n"
+        "|   |   |           Source []\n"
+        "|   |   IndexScan [{'<indexKey> 1': 'inner_0', '<rid>': 'rid_2'}, scanDefName: 'c1', "
+        "indexDefName: 'index1', intervals: {{{('Const [70]', '+Inf'), ('-Inf', '+Inf')}}}]\n"
+        "|   |       BindBlock:\n"
+        "|   |           [inner_0]\n"
+        "|   |               Source []\n"
+        "|   |           [rid_2]\n"
+        "|   |               Source []\n"
+        "|   IndexScan [{'<indexKey> 1': 'inner_0', '<rid>': 'rid_2'}, scanDefName: 'c1', "
+        "indexDefName: 'index1', intervals: {{{('-Inf', 'Const [90]'), ('-Inf', '+Inf')}}}]\n"
         "|       BindBlock:\n"
-        "|           [rid_1]\n"
+        "|           [inner_0]\n"
         "|               Source []\n"
-        "IndexScan [{'<rid>': 'rid_0'}, scanDefName: 'c1', indexDefName: 'index1', intervals: "
-        "{('Const [70]', '+Inf')}]\n"
+        "|           [rid_2]\n"
+        "|               Source []\n"
+        "IndexScan [{'<indexKey> 1': 'outer_0', '<rid>': 'rid_2'}, scanDefName: 'c1', "
+        "indexDefName: 'index1', intervals: {{{['Const [100]', 'Const [100]'], ('-Inf', "
+        "'+Inf')}}}]\n"
         "    BindBlock:\n"
-        "        [rid_0]\n"
+        "        [outer_0]\n"
+        "            Source []\n"
+        "        [rid_2]\n"
         "            Source []\n",
         ExplainGenerator::explainV2(optimized));
 }
@@ -1162,10 +1205,7 @@ TEST(PhysOptimizer, LocalGlobalAgg) {
         "|   |       RefBlock: \n"
         "|   |           Variable [pa]\n"
         "|   aggregations:\n"
-        "|       BindBlock:\n"
-        "|           [pc]\n"
-        "|               Source []\n"
-        "|       RefBlock: \n"
+        "|       [pc]\n"
         "|           FunctionCall [$sum]\n"
         "|           Variable [preagg_0]\n"
         "Exchange []\n"
@@ -1180,10 +1220,7 @@ TEST(PhysOptimizer, LocalGlobalAgg) {
         "|   |       RefBlock: \n"
         "|   |           Variable [pa]\n"
         "|   aggregations:\n"
-        "|       BindBlock:\n"
-        "|           [preagg_0]\n"
-        "|               Source []\n"
-        "|       RefBlock: \n"
+        "|       [preagg_0]\n"
         "|           FunctionCall [$sum]\n"
         "|           Variable [pb]\n"
         "PhysicalScan [{'<root>': 'root', 'a': 'pa', 'b': 'pb'}, 'c1', parallel]\n"
@@ -1239,10 +1276,7 @@ TEST(PhysOptimizer, LocalGlobalAgg1) {
         "|   |   groupings:\n"
         "|   |       RefBlock: \n"
         "|   aggregations:\n"
-        "|       BindBlock:\n"
-        "|           [pc]\n"
-        "|               Source []\n"
-        "|       RefBlock: \n"
+        "|       [pc]\n"
         "|           FunctionCall [$sum]\n"
         "|           Variable [preagg_0]\n"
         "Exchange []\n"
@@ -1254,10 +1288,7 @@ TEST(PhysOptimizer, LocalGlobalAgg1) {
         "|   |   groupings:\n"
         "|   |       RefBlock: \n"
         "|   aggregations:\n"
-        "|       BindBlock:\n"
-        "|           [preagg_0]\n"
-        "|               Source []\n"
-        "|       RefBlock: \n"
+        "|       [preagg_0]\n"
         "|           FunctionCall [$sum]\n"
         "|           Variable [pb]\n"
         "PhysicalScan [{'<root>': 'root', 'b': 'pb'}, 'c1', parallel]\n"
@@ -1466,7 +1497,7 @@ TEST(PhysOptimizer, PartialIndex) {
         "|   RefBlock: \n"
         "|       Variable [rid_0]\n"
         "IndexScan [{'<rid>': 'rid_0'}, scanDefName: 'c1', indexDefName: 'index1', intervals: "
-        "{['Const [3]', 'Const [3]']}]\n"
+        "{{{['Const [3]', 'Const [3]']}}}]\n"
         "    BindBlock:\n"
         "        [rid_0]\n"
         "            Source []\n",

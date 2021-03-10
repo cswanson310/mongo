@@ -198,6 +198,8 @@ std::unique_ptr<sbe::EExpression> SBEExpressionLowering::transport(
     auto name = fn.name();
     if (name == "$sum") {
         name = "sum";
+    } else if (name == "$first") {
+        name = "first";
     }
 
     return sbe::makeE<sbe::EFunction>(name, std::move(args));
@@ -768,7 +770,12 @@ std::unique_ptr<sbe::EExpression> SBENodeLowering::convertBoundsToExpr(
 std::unique_ptr<sbe::PlanStage> SBENodeLowering::walk(const IndexScanNode& n, const ABT&) {
     const auto& fieldProjectionMap = n.getFieldProjectionMap();
     const auto& indexSpec = n.getIndexSpecification();
-    const auto& interval = indexSpec.getInterval();
+
+    const auto& intervals = indexSpec.getIntervals();
+    uassert(0,
+            "Can only lower singular intervals",
+            intervals.size() == 1 && intervals.at(0).size() == 1);
+    const auto& interval = intervals.at(0).at(0);
 
     const std::string& indexDefName = n.getIndexSpecification().getIndexDefName();
     const auto& metadata = _phaseManager.getMetadata();

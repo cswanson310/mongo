@@ -170,7 +170,7 @@ bool OptPhaseManager::runMemoPhysicalRewrite(const OptPhase phase,
     _physicalPlansExplorationCount = rewriter.getPlanExplorationCount();
     _physicalNodeId = {rootGroupId, optGroupResult._index};
 
-    auto [node, nodeMap] = extractPhysicalPlan(_physicalNodeId, _memo);
+    auto [node, nodeMap] = extractPhysicalPlan(_physicalNodeId, _memo, _prefixId);
     input = std::move(node);
     _nodeToPhysPropsMap = std::move(nodeMap);
 

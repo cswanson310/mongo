@@ -111,6 +111,6 @@ CandidateIndexMap computeCandidateIndexMap(const ProjectionName& scanProjectionN
  * Extracts a complete physical plan by inlining references to MemoPhysicalPlanNode.
  */
 std::pair<ABT, std::unordered_map<const Node*, MemoPhysicalNodeId>> extractPhysicalPlan(
-    const MemoPhysicalNodeId id, const cascades::Memo& memo);
+    const MemoPhysicalNodeId id, const cascades::Memo& memo, PrefixId& prefixId);
 
 }  // namespace mongo::optimizer

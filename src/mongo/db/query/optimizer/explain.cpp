@@ -114,7 +114,7 @@ class ExplainGeneratorTransporter {
             return *this;
         }
 
-        std::string str(const bool forIndexBounds = false) {
+        std::string str(const bool singleLine = false) {
             newLine();
 
             std::ostringstream os;
@@ -133,7 +133,7 @@ class ExplainGeneratorTransporter {
                     }
 
                     case CommandType::AddLine: {
-                        if (forIndexBounds) {
+                        if (singleLine) {
                             if (!firstAddLine) {
                                 os << " ";
                             }
@@ -285,7 +285,7 @@ public:
         if (lowBound.isInfinite()) {
             printer << "-Inf";
         } else {
-            printer << generate(lowBound.getBound()).str(true /*forIndexBounds*/);
+            printer << generate(lowBound.getBound()).str(true /*singleLine*/);
         }
 
         printer << "', '";
@@ -349,7 +349,7 @@ public:
         printer << "indexDefName: '" << spec.getIndexDefName() << "', ";
 
         printer << "intervals: {";
-        printInterval(printer, spec.getInterval());
+        printIntervalDNF(printer, spec.getIntervals());
         printer << "}";
 
         if (spec.isReverseOrder()) {
@@ -617,8 +617,21 @@ public:
         }
 
         {
+            std::map<ProjectionName, size_t> ordered;
+            const ProjectionNameVector& aggProjectionNames = node.getAggregationProjectionNames();
+            for (size_t i = 0; i < aggProjectionNames.size(); i++) {
+                ordered.emplace(aggProjectionNames.at(i), i);
+            }
+
             ExplainPrinter aggPrinter("aggregations:");
-            aggPrinter << bindAggResult << refsAggResult;
+            for (const auto& [projectionName, index] : ordered) {
+                ExplainPrinter aggName;
+                aggName << "[" << projectionName << "]";
+                ExplainPrinter aggExpr = generate(node.getAggregationExpressions().at(index));
+                aggName << aggExpr;
+                aggPrinter << aggName;
+            }
+
             printer << aggPrinter;
         }
 

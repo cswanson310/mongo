@@ -753,18 +753,139 @@ CandidateIndexMap computeCandidateIndexMap(const ProjectionName& scanProjectionN
     return result;
 }
 
+static ABT createIntersectOrUnionForIndexLower(const bool isIntersect,
+                                               ABTVector inputs,
+                                               const FieldProjectionMap& innerMap,
+                                               const FieldProjectionMap& outerMap,
+                                               PrefixId& prefixId) {
+    const size_t inputSize = inputs.size();
+    if (inputSize == 1) {
+        return std::move(inputs.front());
+    }
+
+    ProjectionNameVector unionProjectionNames;
+    unionProjectionNames.push_back(innerMap._ridProjection);
+    for (const auto& [fieldName, projectionName] : innerMap._fieldProjections) {
+        unionProjectionNames.push_back(projectionName);
+    }
+
+    ProjectionNameVector aggProjectionNames;
+    for (const auto& [fieldName, projectionName] : outerMap._fieldProjections) {
+        aggProjectionNames.push_back(projectionName);
+    }
+
+    ProjectionName countProjection;
+    if (isIntersect) {
+        // Last agg projection is for counting.
+        countProjection = prefixId.getNextId("count");
+        aggProjectionNames.push_back(countProjection);
+    }
+
+    ABTVector aggExpressions;
+    for (const auto& [fieldName, projectionName] : innerMap._fieldProjections) {
+        aggExpressions.emplace_back(
+            make<FunctionCall>("$first", ABTVector{make<Variable>(projectionName)}));
+    }
+    if (isIntersect) {
+        aggExpressions.emplace_back(make<FunctionCall>("$sum", ABTVector{Constant::int64(1)}));
+    }
+
+    ABT result = make<UnionNode>(std::move(unionProjectionNames), std::move(inputs));
+    result = make<GroupByNode>(ProjectionNameVector{innerMap._ridProjection},
+                               std::move(aggProjectionNames),
+                               std::move(aggExpressions),
+                               std::move(result));
+
+    if (isIntersect) {
+        result = make<FilterNode>(
+            make<EvalFilter>(make<PathCompare>(Operations::Eq, Constant::int64(inputSize)),
+                             make<Variable>(countProjection)),
+            std::move(result));
+    }
+    return result;
+}
+
+/**
+ * Decomposes compound bound into a series of unions and intersections of singular intervals by
+ * unrolling into explicit unions and intersects.
+ * TODO: recursive CTE's to lower intervals with multiple inequalities (data-dependent bounds).
+ */
+static void indexIntervalDNFLower(ABT& n, const IndexScanNode& node, PrefixId& prefixId) {
+    const auto& spec = node.getIndexSpecification();
+    const auto& intervals = spec.getIntervals();
+    const bool isSingularDisjunction = intervals.size() == 1;
+    if (isSingularDisjunction && intervals.front().size() == 1) {
+        // Already lowered.
+        return;
+    }
+
+    FieldProjectionMap outerMap = node.getFieldProjectionMap();
+    if (outerMap._ridProjection.empty()) {
+        outerMap._ridProjection = prefixId.getNextId("rid");
+    }
+    if (!isSingularDisjunction) {
+        for (auto& [fieldName, projectionName] : outerMap._fieldProjections) {
+            projectionName = prefixId.getNextId("outer");
+        }
+    }
+
+    ABTVector disjuncts;
+    for (const auto& conjunction : intervals) {
+        const bool isSingularConjunction = conjunction.size() == 1;
+        FieldProjectionMap innerMap = outerMap;
+        if (!isSingularConjunction) {
+            for (auto& [fieldName, projectionName] : innerMap._fieldProjections) {
+                projectionName = prefixId.getNextId("inner");
+            }
+        }
+
+        ABTVector conjuncts;
+        for (const auto& interval : conjunction) {
+            ABT physicalIndexScan = make<IndexScanNode>(innerMap,
+                                                        IndexSpecification{spec.getScanDefName(),
+                                                                           spec.getIndexDefName(),
+                                                                           {{interval}},
+                                                                           spec.isReverseOrder()});
+            conjuncts.emplace_back(std::move(physicalIndexScan));
+        }
+
+        disjuncts.emplace_back(createIntersectOrUnionForIndexLower(
+            true /*isIntersect*/, std::move(conjuncts), innerMap, outerMap, prefixId));
+    }
+
+    n = createIntersectOrUnionForIndexLower(false /*isIntersect*/,
+                                            std::move(disjuncts),
+                                            outerMap,
+                                            node.getFieldProjectionMap(),
+                                            prefixId);
+}
+
 class MemoPhysicalPlanExtractor {
 public:
     explicit MemoPhysicalPlanExtractor(
         const cascades::Memo& memo,
-        std::unordered_map<const Node*, MemoPhysicalNodeId>& nodeToPhysPropsMap)
-        : _memo(memo), _nodeToPhysPropsMap(nodeToPhysPropsMap) {}
+        std::unordered_map<const Node*, MemoPhysicalNodeId>& nodeToPhysPropsMap,
+        PrefixId& prefixId)
+        : _memo(memo), _nodeToPhysPropsMap(nodeToPhysPropsMap), _prefixId(prefixId) {}
 
     /**
      * Physical delegator node.
      */
     void transport(ABT& n, const MemoPhysicalDelegatorNode& node, const MemoPhysicalNodeId /*id*/) {
         n = extract(node.getNodeId());
+    }
+
+    /**
+     * TODO: consider moving into its own rewrite.
+     */
+    void transport(ABT& n,
+                   const IndexScanNode& node,
+                   const MemoPhysicalNodeId id,
+                   ABT& /*binder*/) {
+        indexIntervalDNFLower(n, node, _prefixId);
+
+        // For now include only the root node of the translation.
+        _nodeToPhysPropsMap.emplace(n.cast<Node>(), id);
     }
 
     /**
@@ -787,12 +908,13 @@ private:
     // We don't own this.
     const cascades::Memo& _memo;
     std::unordered_map<const Node*, MemoPhysicalNodeId>& _nodeToPhysPropsMap;
+    PrefixId& _prefixId;
 };
 
 std::pair<ABT, std::unordered_map<const Node*, MemoPhysicalNodeId>> extractPhysicalPlan(
-    const MemoPhysicalNodeId id, const cascades::Memo& memo) {
+    const MemoPhysicalNodeId id, const cascades::Memo& memo, PrefixId& prefixId) {
     std::unordered_map<const Node*, MemoPhysicalNodeId> resultMap;
-    MemoPhysicalPlanExtractor extractor(memo, resultMap);
+    MemoPhysicalPlanExtractor extractor(memo, resultMap, prefixId);
     ABT resultNode = extractor.extract(id);
     return {std::move(resultNode), std::move(resultMap)};
 }
