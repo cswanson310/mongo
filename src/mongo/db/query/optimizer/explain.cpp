@@ -910,7 +910,7 @@ public:
 
         std::map<properties::Property::key_type, properties::Property> ordered;
         for (const auto& entry : props) {
-            ordered.template insert(entry);
+            ordered.insert(entry);
         }
 
         PropPrintVisitor visitor(propertiesPrinter);
