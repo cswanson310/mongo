@@ -94,7 +94,7 @@ std::unique_ptr<vm::CodeFragment> EVariable::compile(CompileCtx& ctx) const {
 
     if (_frameId) {
         int offset = -_var - 1;
-        code->appendLocalVal(*_frameId, offset);
+        code->appendLocalVal(*_frameId, offset, _moveFrom);
     } else {
         auto accessor = ctx.root->getAccessor(ctx, _var);
         code->appendAccessVal(accessor);
@@ -372,6 +372,7 @@ static stdx::unordered_map<std::string, BuiltinFn> kBuiltinFunctions = {
     {"replaceOne", BuiltinFn{[](size_t n) { return n == 3; }, vm::Builtin::replaceOne, false}},
     {"dropFields", BuiltinFn{[](size_t n) { return n > 0; }, vm::Builtin::dropFields, false}},
     {"newArray", BuiltinFn{kAnyNumberOfArgs, vm::Builtin::newArray, false}},
+    {"keepFields", BuiltinFn{[](size_t n) { return n > 0; }, vm::Builtin::keepFields, false}},
     {"newObj", BuiltinFn{[](size_t n) { return n % 2 == 0; }, vm::Builtin::newObj, false}},
     {"ksToString", BuiltinFn{[](size_t n) { return n == 1; }, vm::Builtin::ksToString, false}},
     {"ks", BuiltinFn{[](size_t n) { return n > 2; }, vm::Builtin::newKs, false}},
@@ -451,6 +452,7 @@ static stdx::unordered_map<std::string, BuiltinFn> kBuiltinFunctions = {
     {"reverseArray", BuiltinFn{[](size_t n) { return n == 1; }, vm::Builtin::reverseArray, false}},
     {"dateAdd", BuiltinFn{[](size_t n) { return n == 5; }, vm::Builtin::dateAdd, false}},
     {"hasNullBytes", BuiltinFn{[](size_t n) { return n == 1; }, vm::Builtin::hasNullBytes, false}},
+    {"hash", BuiltinFn{[](size_t n) { return n >= 0; }, vm::Builtin::hash, false}},
     {"ftsMatch", BuiltinFn{[](size_t n) { return n == 2; }, vm::Builtin::ftsMatch, false}},
     {"generateSortKey",
      BuiltinFn{[](size_t n) { return n == 2; }, vm::Builtin::generateSortKey, false}},
@@ -480,8 +482,16 @@ static stdx::unordered_map<std::string, InstrFn> kInstrFunctions = {
      InstrFn{[](size_t n) { return n == 2; }, &vm::CodeFragment::appendGetElement, false}},
     {"collComparisonKey",
      InstrFn{[](size_t n) { return n == 2; }, &vm::CodeFragment::appendCollComparisonKey, false}},
+    {"getFieldOrElement",
+     InstrFn{[](size_t n) { return n == 2; }, &vm::CodeFragment::appendGetFieldOrElement, false}},
     {"fillEmpty",
      InstrFn{[](size_t n) { return n == 2; }, &vm::CodeFragment::appendFillEmpty, false}},
+    {"traverseP",
+     InstrFn{[](size_t n) { return n == 2; }, &vm::CodeFragment::appendTraverseP, false}},
+    {"traverseF",
+     InstrFn{[](size_t n) { return n == 3; }, &vm::CodeFragment::appendTraverseF, false}},
+    {"setField",
+     InstrFn{[](size_t n) { return n == 3; }, &vm::CodeFragment::appendSetField, false}},
     {"exists", InstrFn{[](size_t n) { return n == 1; }, &vm::CodeFragment::appendExists, false}},
     {"isNull", InstrFn{[](size_t n) { return n == 1; }, &vm::CodeFragment::appendIsNull, false}},
     {"isObject",
@@ -690,6 +700,46 @@ std::vector<DebugPrinter::Block> ELocalBind::debugPrint() const {
 
     return ret;
 }
+
+std::unique_ptr<EExpression> ELocalLambda::clone() const {
+    return std::make_unique<ELocalLambda>(_frameId, _nodes.back()->clone());
+}
+
+std::unique_ptr<vm::CodeFragment> ELocalLambda::compile(CompileCtx& ctx) const {
+    auto code = std::make_unique<vm::CodeFragment>();
+
+    // Compile the body first so we know its size.
+    auto body = _nodes.back()->compile(ctx);
+    body->appendRet();
+    invariant(body->stackSize() == 1);
+    body->fixup(1);
+    // Lambda parameter is no longer accessible after this point so remove any fixup information.
+    body->removeFixup(_frameId);
+
+    // Jump around the body.
+    code->appendJump(body->instrs().size());
+
+    // Remember the position and append the body.
+    auto bodyPosition = code->instrs().size();
+    code->appendNoStack(std::move(body));
+
+    // Push the lambda value on the stack
+    code->appendLocalLambda(bodyPosition);
+
+    return code;
+}
+
+std::vector<DebugPrinter::Block> ELocalLambda::debugPrint() const {
+    std::vector<DebugPrinter::Block> ret;
+
+    DebugPrinter::addKeyword(ret, "\\");
+    DebugPrinter::addIdentifier(ret, _frameId, 0);
+    ret.emplace_back(".");
+    DebugPrinter::addBlocks(ret, _nodes.back()->debugPrint());
+
+    return ret;
+}
+
 
 std::unique_ptr<EExpression> EFail::clone() const {
     return std::make_unique<EFail>(_code, getStringView(_messageTag, _messageVal));

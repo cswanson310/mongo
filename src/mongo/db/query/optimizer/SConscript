@@ -1,0 +1,47 @@
+# -*- mode: python -*-
+
+Import("env")
+
+env = env.Clone()
+
+env.Library(
+    target="optimizer",
+    source=[
+        "abt_compare.cpp",
+        "abt_hash.cpp",
+        "cascades/ce_heuristic.cpp",
+        "cascades/cost_derivation.cpp",
+        "cascades/logical_props_derivation.cpp",
+        "cascades/logical_rewriter.cpp",
+        "cascades/memo.cpp",
+        "cascades/physical_rewriter.cpp",
+        "defs.cpp",
+        "explain.cpp",
+        "metadata.cpp",
+        "node.cpp",
+        'opt_phase_manager.cpp',
+        "props.cpp",
+        "reference_tracker.cpp",
+        "rewrites/const_eval.cpp",
+        "rewrites/path.cpp",
+        "rewrites/path_lower.cpp",
+        "syntax/expr.cpp",
+        "utils.cpp"
+    ],
+    LIBDEPS=[
+        "$BUILD_DIR/mongo/db/exec/sbe/query_sbe_values",
+    ],
+)
+
+env.CppUnitTest(
+    target='optimizer_test',
+    source=[
+        'logical_rewriter_optimizer_test.cpp',
+        'optimizer_test.cpp',
+        'physical_rewriter_optimizer_test.cpp',
+        'rewrites/path_optimizer_test.cpp',
+    ],
+    LIBDEPS=[
+        'optimizer',
+    ]
+)

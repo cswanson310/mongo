@@ -53,7 +53,8 @@ ScanStage::ScanStage(CollectionUUID collectionUuid,
                      bool forward,
                      PlanYieldPolicy* yieldPolicy,
                      PlanNodeId nodeId,
-                     ScanCallbacks scanCallbacks)
+                     ScanCallbacks scanCallbacks,
+                     bool useRandomCursor)
     : PlanStage(seekKeySlot ? "seek"_sd : "scan"_sd, yieldPolicy, nodeId),
       _collUuid(collectionUuid),
       _recordSlot(recordSlot),
@@ -67,7 +68,8 @@ ScanStage::ScanStage(CollectionUUID collectionUuid,
       _vars(std::move(vars)),
       _seekKeySlot(seekKeySlot),
       _forward(forward),
-      _scanCallbacks(std::move(scanCallbacks)) {
+      _scanCallbacks(std::move(scanCallbacks)),
+      _useRandomCursor(useRandomCursor) {
     invariant(_fields.size() == _vars.size());
     invariant(!_seekKeySlot || _forward);
     tassert(5567202,
@@ -75,6 +77,8 @@ ScanStage::ScanStage(CollectionUUID collectionUuid,
             !_oplogTsSlot ||
                 (std::find(_fields.begin(), _fields.end(), repl::OpTime::kTimestampFieldName) !=
                  _fields.end()));
+    // We cannot use a random cursor if we are seeking.
+    invariant(!_useRandomCursor || !_seekKeySlot);
 }
 
 std::unique_ptr<PlanStage> ScanStage::clone() const {
@@ -230,7 +234,7 @@ void ScanStage::open(bool reOpen) {
     if (_open) {
         tassert(5071001, "reopened ScanStage but reOpen=false", reOpen);
         tassert(5071002, "ScanStage is open but _coll is not held", _coll);
-        tassert(5071003, "ScanStage is open but don't have _cursor", _cursor);
+        tassert(5071003, "ScanStage is open but don't have _cursor", _cursor || _randomCursor);
     } else {
         tassert(5071004, "first open to ScanStage but reOpen=true", !reOpen);
         if (!_coll) {
@@ -262,7 +266,11 @@ void ScanStage::open(bool reOpen) {
         }
 
         if (!_cursor || !_seekKeyAccessor) {
-            _cursor = collection->getCursor(_opCtx, _forward);
+            if (_useRandomCursor) {
+                _randomCursor = collection->getRecordStore()->getRandomCursor(_opCtx);
+            } else {
+                _cursor = collection->getCursor(_opCtx, _forward);
+            }
         }
     } else {
         _cursor.reset();
@@ -286,7 +294,8 @@ PlanState ScanStage::getNext() {
     checkForInterrupt(_opCtx);
 
     auto res = _firstGetNext && _seekKeyAccessor;
-    auto nextRecord = res ? _cursor->seekExact(_key) : _cursor->next();
+    auto nextRecord = _useRandomCursor ? _randomCursor->next()
+                                       : (res ? _cursor->seekExact(_key) : _cursor->next());
     _firstGetNext = false;
 
     if (!nextRecord) {
@@ -375,6 +384,7 @@ void ScanStage::close() {
 
     trackClose();
     _cursor.reset();
+    _randomCursor.reset();
     _coll.reset();
     _open = false;
 }
@@ -460,6 +470,10 @@ std::vector<DebugPrinter::Block> ScanStage::debugPrint() const {
         DebugPrinter::addIdentifier(ret, _indexKeyPatternSlot.get());
     } else {
         DebugPrinter::addIdentifier(ret, DebugPrinter::kNoneKeyword);
+    }
+
+    if (_useRandomCursor) {
+        DebugPrinter::addKeyword(ret, "random");
     }
 
     ret.emplace_back(DebugPrinter::Block("[`"));

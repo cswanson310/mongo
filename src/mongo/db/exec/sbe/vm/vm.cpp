@@ -69,6 +69,8 @@ int Instruction::stackOffset[Instruction::Tags::lastInstruction] = {
     1,   // pushAccessVal
     1,   // pushMoveVal
     1,   // pushLocalVal
+    1,   // pushMoveLocalVal
+    1,   // pushLocalLambda
     -1,  // pop
     0,   // swap
 
@@ -103,6 +105,10 @@ int Instruction::stackOffset[Instruction::Tags::lastInstruction] = {
     -1,  // getField
     -1,  // getElement
     -1,  // collComparisonKey
+    -1,  // getFieldOrElement
+    -1,  // traverseP
+    -2,  // traverseF
+    -2,  // setField
 
     -1,  // aggSum
     -1,  // aggMin
@@ -133,6 +139,7 @@ int Instruction::stackOffset[Instruction::Tags::lastInstruction] = {
     0,   // jmp
     -1,  // jmpTrue
     0,   // jmpNothing
+    0,   // ret
 
     -1,  // fail
 };
@@ -193,6 +200,11 @@ void CodeFragment::append(std::unique_ptr<CodeFragment> code) {
     _stackSize += code->_stackSize;
 }
 
+void CodeFragment::appendNoStack(std::unique_ptr<CodeFragment> code) {
+    invariant(code->_fixUps.empty());
+    copyCodeAndFixup(*code);
+}
+
 void CodeFragment::append(std::unique_ptr<CodeFragment> lhs, std::unique_ptr<CodeFragment> rhs) {
     invariant(lhs->stackSize() == rhs->stackSize());
 
@@ -240,9 +252,9 @@ void CodeFragment::appendMoveVal(value::SlotAccessor* accessor) {
     offset += writeToMemory(offset, accessor);
 }
 
-void CodeFragment::appendLocalVal(FrameId frameId, int stackOffset) {
+void CodeFragment::appendLocalVal(FrameId frameId, int stackOffset, bool moveFrom) {
     Instruction i;
-    i.tag = Instruction::pushLocalVal;
+    i.tag = moveFrom ? Instruction::pushMoveLocalVal : Instruction::pushLocalVal;
     adjustStackSimple(i);
 
     auto fixUpOffset = _instrs.size() + sizeof(Instruction);
@@ -252,6 +264,20 @@ void CodeFragment::appendLocalVal(FrameId frameId, int stackOffset) {
 
     offset += writeToMemory(offset, i);
     offset += writeToMemory(offset, stackOffset);
+}
+
+void CodeFragment::appendLocalLambda(int codePosition) {
+    Instruction i;
+    i.tag = Instruction::pushLocalLambda;
+    adjustStackSimple(i);
+
+    auto size = sizeof(Instruction) + sizeof(codePosition);
+    auto offset = allocateSpace(size);
+
+    int codeOffset = codePosition - _instrs.size();
+
+    offset += writeToMemory(offset, i);
+    offset += writeToMemory(offset, codeOffset);
 }
 
 void CodeFragment::appendAdd() {
@@ -317,6 +343,10 @@ void CodeFragment::appendGetElement() {
 
 void CodeFragment::appendCollComparisonKey() {
     appendSimpleInstruction(Instruction::collComparisonKey);
+}
+
+void CodeFragment::appendGetFieldOrElement() {
+    appendSimpleInstruction(Instruction::getFieldOrElement);
 }
 
 void CodeFragment::appendSum() {
@@ -589,6 +619,222 @@ std::tuple<bool, value::TypeTags, value::Value> ByteCode::getElement(value::Type
         // bsonArray, so it should be impossible to reach this point.
         MONGO_UNREACHABLE
     }
+}
+
+std::tuple<bool, value::TypeTags, value::Value> ByteCode::getFieldOrElement(
+    value::TypeTags objTag,
+    value::Value objValue,
+    value::TypeTags fieldTag,
+    value::Value fieldValue) {
+
+    // If this is an array and we can convert the "field name" to a reasonable number then treat
+    // this as getElement call.
+    if (value::isArray(objTag) && value::isString(fieldTag)) {
+        int idx;
+        auto status = NumberParser{}(value::getStringDataView(fieldTag, fieldValue), &idx);
+        if (!status.isOK()) {
+            return {false, value::TypeTags::Nothing, 0};
+        }
+        return getElement(
+            objTag, objValue, value::TypeTags::NumberInt32, value::bitcastFrom<int>(idx));
+    } else {
+        return getField(objTag, objValue, fieldTag, fieldValue);
+    }
+}
+
+std::tuple<bool, value::TypeTags, value::Value> ByteCode::traverseP(const CodeFragment* code) {
+    auto [lamOwn, lamTag, lamVal] = getFromStack(0);
+    auto [own, tag, val] = getFromStack(1);
+
+    if (lamTag != value::TypeTags::LocalLambda) {
+        return {false, value::TypeTags::Nothing, 0};
+    }
+    int64_t lamPos = value::bitcastTo<int64_t>(lamVal);
+
+    if (value::isArray(tag)) {
+        return traverseP_nested(code, lamPos, tag, val);
+    } else {
+        // Transfer the ownership to the lambda
+        setStack(1, false, value::TypeTags::Nothing, 0);
+        pushStack(own, tag, val);
+        return runLambdaInternal(code, lamPos);
+    }
+}
+
+std::tuple<bool, value::TypeTags, value::Value> ByteCode::traverseP_nested(const CodeFragment* code,
+                                                                           int64_t position,
+                                                                           value::TypeTags tag,
+                                                                           value::Value val) {
+    if (value::isArray(tag)) {
+        auto [tagArr, valArr] = value::makeNewArray();
+        auto arr = value::getArrayView(valArr);
+        value::ValueGuard guard{tag, valArr};
+
+        for (value::ArrayEnumerator enumerator(tag, val); !enumerator.atEnd();
+             enumerator.advance()) {
+
+            auto [elemTag, elemVal] = enumerator.getViewOfValue();
+            auto [retOwn, retTag, retVal] = traverseP_nested(code, position, elemTag, elemVal);
+            if (!retOwn) {
+                auto [copyTag, copyVal] = value::copyValue(retTag, retVal);
+                retTag = copyTag;
+                retVal = copyVal;
+            }
+            arr->push_back(retTag, retVal);
+        }
+
+        guard.reset();
+        return {true, tagArr, valArr};
+    } else {
+        pushStack(false, tag, val);
+        return runLambdaInternal(code, position);
+    }
+}
+std::tuple<bool, value::TypeTags, value::Value> ByteCode::traverseF(const CodeFragment* code) {
+    auto [lamOwn, lamTag, lamVal] = getFromStack(1);
+    auto [own, tag, val] = getFromStack(2);
+    auto [numberOwn, numberTag, numberVal] = getFromStack(0);
+
+    if (lamTag != value::TypeTags::LocalLambda) {
+        return {false, value::TypeTags::Nothing, 0};
+    }
+    int64_t lamPos = value::bitcastTo<int64_t>(lamVal);
+
+    if (value::isArray(tag)) {
+        // Return true if any of the array elements is true.
+        for (value::ArrayEnumerator enumerator(tag, val); !enumerator.atEnd();
+             enumerator.advance()) {
+
+            auto [elemTag, elemVal] = enumerator.getViewOfValue();
+            pushStack(false, elemTag, elemVal);
+            auto [retOwn, retTag, retVal] = runLambdaInternal(code, lamPos);
+
+            bool isTrue = (retTag == value::TypeTags::Boolean) && value::bitcastTo<bool>(retVal);
+            if (retOwn) {
+                value::releaseValue(retTag, retVal);
+            }
+
+            if (isTrue) {
+                return {false, value::TypeTags::Boolean, value::bitcastFrom<bool>(true)};
+            }
+        }
+
+        // If this is a filter over a number path then run over the whole array.
+        if (numberTag == value::TypeTags::Boolean && value::bitcastTo<bool>(numberVal)) {
+            // Transfer the ownership to the lambda
+            setStack(2, false, value::TypeTags::Nothing, 0);
+            pushStack(own, tag, val);
+            return runLambdaInternal(code, lamPos);
+        }
+
+        return {false, value::TypeTags::Boolean, value::bitcastFrom<bool>(false)};
+    } else {
+        // Transfer the ownership to the lambda
+        setStack(2, false, value::TypeTags::Nothing, 0);
+        pushStack(own, tag, val);
+        return runLambdaInternal(code, lamPos);
+    }
+}
+
+std::tuple<bool, value::TypeTags, value::Value> ByteCode::setField() {
+    auto [newOwn, newTag, newVal] = moveFromStack(0);
+    auto [fieldOwn, fieldTag, fieldVal] = getFromStack(1);
+    // TODO - implement a moveFromStack optimization.
+    auto [objOwn, objTag, objVal] = getFromStack(2);
+
+    if (!value::isString(fieldTag)) {
+        return {false, value::TypeTags::Nothing, 0};
+    }
+
+    auto fieldName = value::getStringView(fieldTag, fieldVal);
+
+    if (newTag == value::TypeTags::Nothing) {
+        // Setting a field value to nothing means removing the field.
+        if (value::isObject(objTag)) {
+            auto [tag, val] = value::makeNewObject();
+            auto obj = value::getObjectView(val);
+            value::ValueGuard guard{tag, val};
+
+            if (objTag == value::TypeTags::bsonObject) {
+                auto be = value::bitcastTo<const char*>(objVal);
+                auto end = be + ConstDataView(be).read<LittleEndian<uint32_t>>();
+                ;
+                // Skip document length.
+                be += 4;
+                while (*be != 0) {
+                    auto sv = bson::fieldNameView(be);
+
+                    if (sv != fieldName) {
+                        auto [tag, val] = bson::convertFrom(false, be, end, sv.size());
+                        obj->push_back(sv, tag, val);
+                    }
+
+                    be = bson::advance(be, sv.size());
+                }
+            } else {
+                auto objRoot = value::getObjectView(objVal);
+                for (size_t idx = 0; idx < objRoot->size(); ++idx) {
+                    StringData sv(objRoot->field(idx));
+
+                    if (sv != fieldName) {
+                        auto [tag, val] = objRoot->getAt(idx);
+                        auto [copyTag, copyVal] = value::copyValue(tag, val);
+                        obj->push_back(sv, copyTag, copyVal);
+                    }
+                }
+            }
+
+            guard.reset();
+            return {true, tag, val};
+        } else {
+            // Removing field from non-object value hardly makes any sense.
+            return {false, value::TypeTags::Nothing, 0};
+        }
+    } else {
+        // New value is not Nothing. We will be returning a new Object no matter what.
+        auto [tag, val] = value::makeNewObject();
+        auto obj = value::getObjectView(val);
+        value::ValueGuard guard{tag, val};
+
+        if (objTag == value::TypeTags::bsonObject) {
+            auto be = value::bitcastTo<const char*>(objVal);
+            auto end = be + ConstDataView(be).read<LittleEndian<uint32_t>>();
+            ;
+            // Skip document length.
+            be += 4;
+            while (*be != 0) {
+                auto sv = bson::fieldNameView(be);
+
+                if (sv != fieldName) {
+                    auto [tag, val] = bson::convertFrom(false, be, end, sv.size());
+                    obj->push_back(sv, tag, val);
+                }
+
+                be = bson::advance(be, sv.size());
+            }
+        } else if (objTag == value::TypeTags::Object) {
+            auto objRoot = value::getObjectView(objVal);
+            for (size_t idx = 0; idx < objRoot->size(); ++idx) {
+                StringData sv(objRoot->field(idx));
+
+                if (sv != fieldName) {
+                    auto [tag, val] = objRoot->getAt(idx);
+                    auto [copyTag, copyVal] = value::copyValue(tag, val);
+                    obj->push_back(sv, copyTag, copyVal);
+                }
+            }
+        }
+        if (!newOwn) {
+            auto [copyTag, copyVal] = value::copyValue(newTag, newVal);
+            newTag = copyTag;
+            newVal = copyVal;
+        }
+        obj->push_back(fieldName, newTag, newVal);
+
+        guard.reset();
+        return {true, tag, val};
+    }
+    return {false, value::TypeTags::Nothing, 0};
 }
 
 std::tuple<bool, value::TypeTags, value::Value> ByteCode::aggSum(value::TypeTags accTag,
@@ -884,6 +1130,62 @@ std::tuple<bool, value::TypeTags, value::Value> ByteCode::builtinNewArray(ArityT
     return {true, tag, val};
 }
 
+std::tuple<bool, value::TypeTags, value::Value> ByteCode::builtinKeepFields(ArityType arity) {
+    auto [ownedInObj, tagInObj, valInObj] = getFromStack(0);
+
+    // We operate only on objects.
+    if (!value::isObject(tagInObj)) {
+        return {false, value::TypeTags::Nothing, 0};
+    }
+
+    // Build the set of fields to keep.
+    std::set<std::string, std::less<>> keepFieldsSet;
+    for (uint8_t idx = 1; idx < arity; ++idx) {
+        auto [owned, tag, val] = getFromStack(idx);
+
+        if (!value::isString(tag)) {
+            return {false, value::TypeTags::Nothing, 0};
+        }
+
+        keepFieldsSet.emplace(value::getStringView(tag, val));
+    }
+
+    auto [tag, val] = value::makeNewObject();
+    auto obj = value::getObjectView(val);
+    value::ValueGuard guard{tag, val};
+
+    if (tagInObj == value::TypeTags::bsonObject) {
+        auto be = value::bitcastTo<const char*>(valInObj);
+        auto end = be + ConstDataView(be).read<LittleEndian<uint32_t>>();
+        // Skip document length.
+        be += 4;
+        while (*be != 0) {
+            auto sv = bson::fieldNameView(be);
+
+            if (keepFieldsSet.count(sv) == 1) {
+                auto [tag, val] = bson::convertFrom(false, be, end, sv.size());
+                obj->push_back(sv, tag, val);
+            }
+
+            be = bson::advance(be, sv.size());
+        }
+    } else if (tagInObj == value::TypeTags::Object) {
+        auto objRoot = value::getObjectView(valInObj);
+        for (size_t idx = 0; idx < objRoot->size(); ++idx) {
+            StringData sv(objRoot->field(idx));
+
+            if (keepFieldsSet.count(sv) == 1) {
+                auto [tag, val] = objRoot->getAt(idx);
+                auto [copyTag, copyVal] = value::copyValue(tag, val);
+                obj->push_back(sv, copyTag, copyVal);
+            }
+        }
+    }
+
+    guard.reset();
+    return {true, tag, val};
+}
+
 std::tuple<bool, value::TypeTags, value::Value> ByteCode::builtinNewObj(ArityType arity) {
     std::vector<value::TypeTags> typeTags;
     std::vector<value::Value> values;
@@ -966,6 +1268,14 @@ std::tuple<bool, value::TypeTags, value::Value> ByteCode::builtinNewKeyString(Ar
         } else if (value::isString(tag)) {
             auto str = value::getStringView(tag, val);
             kb.appendString(str);
+        } else if (tag == value::TypeTags::MinKey || tag == value::TypeTags::MaxKey) {
+            BSONObjBuilder bob;
+            if (tag == value::TypeTags::MinKey) {
+                bob.appendMinKey("");
+            } else {
+                bob.appendMaxKey("");
+            }
+            kb.appendBSONElement(bob.obj().firstElement(), nullptr);
         } else {
             uasserted(4822802, "unsuppored key string type");
         }
@@ -3040,6 +3350,16 @@ std::tuple<bool, value::TypeTags, value::Value> ByteCode::builtinFtsMatch(ArityT
     return {false, value::TypeTags::Boolean, value::bitcastFrom<bool>(matches)};
 }
 
+std::tuple<bool, value::TypeTags, value::Value> ByteCode::builtinHash(ArityType arity) {
+    auto hashVal = value::hashInit();
+    for (ArityType idx = 0; idx < arity; ++idx) {
+        auto [owned, tag, val] = getFromStack(idx);
+        hashVal = value::hashCombine(hashVal, value::hashValue(tag, val));
+    }
+
+    return {false, value::TypeTags::NumberInt64, value::bitcastFrom<decltype(hashVal)>(hashVal)};
+}
+
 std::tuple<bool, value::TypeTags, value::Value> ByteCode::dispatchBuiltin(Builtin f,
                                                                           ArityType arity) {
     switch (f) {
@@ -3069,6 +3389,8 @@ std::tuple<bool, value::TypeTags, value::Value> ByteCode::dispatchBuiltin(Builti
             return builtinDropFields(arity);
         case Builtin::newArray:
             return builtinNewArray(arity);
+        case Builtin::keepFields:
+            return builtinKeepFields(arity);
         case Builtin::newObj:
             return builtinNewObj(arity);
         case Builtin::ksToString:
@@ -3199,6 +3521,8 @@ std::tuple<bool, value::TypeTags, value::Value> ByteCode::dispatchBuiltin(Builti
             return builtinGetRegexPattern(arity);
         case Builtin::getRegexFlags:
             return builtinGetRegexFlags(arity);
+        case Builtin::hash:
+            return builtinHash(arity);
         case Builtin::ftsMatch:
             return builtinFtsMatch(arity);
         case Builtin::generateSortKey:
@@ -3208,8 +3532,43 @@ std::tuple<bool, value::TypeTags, value::Value> ByteCode::dispatchBuiltin(Builti
     MONGO_UNREACHABLE;
 }
 
-std::tuple<uint8_t, value::TypeTags, value::Value> ByteCode::run(const CodeFragment* code) {
-    auto pcPointer = code->instrs().data();
+void ByteCode::swapStack() {
+    auto [rhsOwned, rhsTag, rhsVal] = getFromStack(0);
+    auto [lhsOwned, lhsTag, lhsVal] = getFromStack(1);
+
+    // Swap values only if they are not physically same. This is necessary for the
+    // "swap and pop" idiom for returning a value from the top of the stack (used
+    // by ELocalBind). For example, consider the case where a series of swap, pop,
+    // swap, pop... instructions are executed and the value at stack[0] and
+    // stack[1] are physically identical, but stack[1] is owned and stack[0] is
+    // not. After swapping them, the 'pop' instruction would free the owned one and
+    // leave the unowned value dangling. The only exception to this is shallow
+    // values (values which fit directly inside a 64 bit Value and don't need
+    // to be freed explicitly).
+    if (!(rhsTag == lhsTag && rhsVal == lhsVal)) {
+        setStack(0, lhsOwned, lhsTag, lhsVal);
+        setStack(1, rhsOwned, rhsTag, rhsVal);
+    } else {
+        // See explanation above.
+        tassert(56123,
+                "Attempting to swap two identical values when top of stack is owned",
+                !rhsOwned || isShallowType(rhsTag));
+    }
+}
+
+std::tuple<bool, value::TypeTags, value::Value> ByteCode::runLambdaInternal(
+    const CodeFragment* code, int64_t position) {
+    runInternal(code, value::bitcastTo<int64_t>(position));
+    swapStack();
+    popStack();
+    auto [retOwn, retTag, retVal] = getFromStack(0);
+    popStack();
+
+    return {retOwn, retTag, retVal};
+}
+
+void ByteCode::runInternal(const CodeFragment* code, int64_t position) {
+    auto pcPointer = code->instrs().data() + position;
     auto pcEnd = pcPointer + code->instrs().size();
 
     for (;;) {
@@ -3257,6 +3616,26 @@ std::tuple<uint8_t, value::TypeTags, value::Value> ByteCode::run(const CodeFragm
 
                     break;
                 }
+                case Instruction::pushMoveLocalVal: {
+                    auto stackOffset = readFromMemory<int>(pcPointer);
+                    pcPointer += sizeof(stackOffset);
+
+                    auto [owned, tag, val] = getFromStack(stackOffset);
+                    setStack(stackOffset, false, value::TypeTags::Nothing, 0);
+
+                    pushStack(owned, tag, val);
+
+                    break;
+                }
+                case Instruction::pushLocalLambda: {
+                    auto offset = readFromMemory<int>(pcPointer);
+                    pcPointer += sizeof(offset);
+                    auto position = pcPointer - code->instrs().data() + offset;
+
+                    pushStack(
+                        false, value::TypeTags::LocalLambda, value::bitcastFrom<int64_t>(position));
+                    break;
+                }
                 case Instruction::pop: {
                     auto [owned, tag, val] = getFromStack(0);
                     popStack();
@@ -3268,29 +3647,7 @@ std::tuple<uint8_t, value::TypeTags, value::Value> ByteCode::run(const CodeFragm
                     break;
                 }
                 case Instruction::swap: {
-                    auto [rhsOwned, rhsTag, rhsVal] = getFromStack(0);
-                    auto [lhsOwned, lhsTag, lhsVal] = getFromStack(1);
-
-                    // Swap values only if they are not physically same. This is necessary for the
-                    // "swap and pop" idiom for returning a value from the top of the stack (used
-                    // by ELocalBind). For example, consider the case where a series of swap, pop,
-                    // swap, pop... instructions are executed and the value at stack[0] and
-                    // stack[1] are physically identical, but stack[1] is owned and stack[0] is
-                    // not. After swapping them, the 'pop' instruction would free the owned one and
-                    // leave the unowned value dangling. The only exception to this is shallow
-                    // values (values which fit directly inside a 64 bit Value and don't need
-                    // to be freed explicitly).
-                    if (!(rhsTag == lhsTag && rhsVal == lhsVal)) {
-                        setStack(0, lhsOwned, lhsTag, lhsVal);
-                        setStack(1, rhsOwned, rhsTag, rhsVal);
-                    } else {
-                        // See explanation above.
-                        tassert(
-                            56123,
-                            "Attempting to swap two identical values when top of stack is owned",
-                            !rhsOwned || isShallowType(rhsTag));
-                    }
-
+                    swapStack();
                     break;
                 }
                 case Instruction::add: {
@@ -3805,6 +4162,58 @@ std::tuple<uint8_t, value::TypeTags, value::Value> ByteCode::run(const CodeFragm
                     }
                     break;
                 }
+                case Instruction::getFieldOrElement: {
+                    auto [rhsOwned, rhsTag, rhsVal] = getFromStack(0);
+                    popStack();
+                    auto [lhsOwned, lhsTag, lhsVal] = getFromStack(0);
+
+                    auto [owned, tag, val] = getFieldOrElement(lhsTag, lhsVal, rhsTag, rhsVal);
+
+                    topStack(owned, tag, val);
+
+                    if (rhsOwned) {
+                        value::releaseValue(rhsTag, rhsVal);
+                    }
+                    if (lhsOwned) {
+                        value::releaseValue(lhsTag, lhsVal);
+                    }
+                    break;
+                }
+                case Instruction::traverseP: {
+                    auto [owned, tag, val] = traverseP(code);
+                    for (uint8_t cnt = 0; cnt < 2; ++cnt) {
+                        auto [owned, tag, val] = getFromStack(0);
+                        popStack();
+                        if (owned) {
+                            value::releaseValue(tag, val);
+                        }
+                    }
+
+                    pushStack(owned, tag, val);
+                    break;
+                }
+                case Instruction::traverseF: {
+                    auto [owned, tag, val] = traverseF(code);
+                    for (uint8_t cnt = 0; cnt < 3; ++cnt) {
+                        auto [owned, tag, val] = getFromStack(0);
+                        popStack();
+                        if (owned) {
+                            value::releaseValue(tag, val);
+                        }
+                    }
+
+                    pushStack(owned, tag, val);
+                    break;
+                }
+                case Instruction::setField: {
+                    auto [owned, tag, val] = setField();
+                    popAndReleaseStack();
+                    popAndReleaseStack();
+                    popAndReleaseStack();
+
+                    pushStack(owned, tag, val);
+                    break;
+                }
                 case Instruction::aggSum: {
                     auto [rhsOwned, rhsTag, rhsVal] = getFromStack(0);
                     popStack();
@@ -4179,6 +4588,10 @@ std::tuple<uint8_t, value::TypeTags, value::Value> ByteCode::run(const CodeFragm
                     }
                     break;
                 }
+                case Instruction::ret: {
+                    pcPointer = pcEnd;
+                    break;
+                }
                 case Instruction::fail: {
                     auto [ownedCode, tagCode, valCode] = getFromStack(1);
                     invariant(tagCode == value::TypeTags::NumberInt64);
@@ -4199,6 +4612,11 @@ std::tuple<uint8_t, value::TypeTags, value::Value> ByteCode::run(const CodeFragm
             }
         }
     }
+}
+
+std::tuple<uint8_t, value::TypeTags, value::Value> ByteCode::run(const CodeFragment* code) {
+    runInternal(code, 0);
+
     uassert(
         4822801, "The evaluation stack must hold only a single value", _argStackOwned.size() == 1);
 

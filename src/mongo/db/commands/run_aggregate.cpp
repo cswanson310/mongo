@@ -41,6 +41,7 @@
 #include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/catalog/database.h"
 #include "mongo/db/catalog/database_holder.h"
+#include "mongo/db/commands/sbe_aggregate.h"
 #include "mongo/db/curop.h"
 #include "mongo/db/cursor_manager.h"
 #include "mongo/db/db_raii.h"
@@ -66,6 +67,7 @@
 #include "mongo/db/query/get_executor.h"
 #include "mongo/db/query/plan_executor_factory.h"
 #include "mongo/db/query/plan_summary_stats.h"
+#include "mongo/db/query/query_feature_flags_gen.h"
 #include "mongo/db/query/query_planner_common.h"
 #include "mongo/db/read_concern.h"
 #include "mongo/db/repl/oplog.h"
@@ -124,7 +126,8 @@ bool handleCursorCommand(OperationContext* opCtx,
                          std::vector<ClientCursor*> cursors,
                          const AggregateCommandRequest& request,
                          const BSONObj& cmdObj,
-                         rpc::ReplyBuilderInterface* result) {
+                         rpc::ReplyBuilderInterface* result,
+                         const bool usedSBE) {
     invariant(!cursors.empty());
     long long batchSize =
         request.getCursor().getBatchSize().value_or(aggregation_request_helper::kDefaultBatchSize);
@@ -205,15 +208,26 @@ bool handleCursorCommand(OperationContext* opCtx,
             exec = nullptr;
             break;
         } catch (DBException& exception) {
-            auto&& explainer = exec->getPlanExplainer();
-            auto&& [stats, _] =
-                explainer.getWinningPlanStats(ExplainOptions::Verbosity::kExecStats);
-            LOGV2_WARNING(23799,
-                          "Aggregate command executor error: {error}, stats: {stats}, cmd: {cmd}",
-                          "Aggregate command executor error",
-                          "error"_attr = exception.toStatus(),
-                          "stats"_attr = redact(stats),
-                          "cmd"_attr = cmdObj);
+            if (usedSBE) {
+                // Under SBE we dont have a concept of a winning plan.
+                // TODO: possibly explain?
+                LOGV2_WARNING(23799,
+                              "Aggregate command executor error: {error}, cmd: {cmd}",
+                              "Aggregate command executor error",
+                              "error"_attr = exception.toStatus(),
+                              "cmd"_attr = cmdObj);
+            } else {
+                auto&& explainer = exec->getPlanExplainer();
+                auto&& [stats, _] =
+                    explainer.getWinningPlanStats(ExplainOptions::Verbosity::kExecStats);
+                LOGV2_WARNING(
+                    23799,
+                    "Aggregate command executor error: {error}, stats: {stats}, cmd: {cmd}",
+                    "Aggregate command executor error",
+                    "error"_attr = exception.toStatus(),
+                    "stats"_attr = redact(stats),
+                    "cmd"_attr = cmdObj);
+            }
 
             exception.addContext("PlanExecutor error during aggregation");
             throw;
@@ -595,6 +609,7 @@ Status runAggregate(OperationContext* opCtx,
     std::vector<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> execs;
     boost::intrusive_ptr<ExpressionContext> expCtx;
     auto curOp = CurOp::get(opCtx);
+    bool usedSBE = false;
     {
         // If we are in a transaction, check whether the parsed pipeline supports
         // being in a transaction.
@@ -813,24 +828,34 @@ Status runAggregate(OperationContext* opCtx,
             // have gotten from find command.
             execs.emplace_back(std::move(attachExecutorCallback.second));
         } else {
-            // Complete creation of the initial $cursor stage, if needed.
-            PipelineD::attachInnerQueryExecutorToPipeline(collection,
-                                                          attachExecutorCallback.first,
-                                                          std::move(attachExecutorCallback.second),
-                                                          pipeline.get());
+            if (feature_flags::gSBE.isEnabledAndIgnoreFCV()) {
+                uassert(
+                    0, "For now exchanging is not supported", !request.getExchange().has_value());
 
-            auto pipelines =
-                createExchangePipelinesIfNeeded(opCtx, expCtx, request, std::move(pipeline), uuid);
-            for (auto&& pipelineIt : pipelines) {
-                // There are separate ExpressionContexts for each exchange pipeline, so make sure to
-                // pass the pipeline's ExpressionContext to the plan executor factory.
-                auto pipelineExpCtx = pipelineIt->getContext();
+                usedSBE = true;
+                auto planExec = createSBEPlanExecutor(opCtx, expCtx, nss, collection, *pipeline);
+                execs.emplace_back(std::move(planExec));
+            } else {
+                // Complete creation of the initial $cursor stage, if needed.
+                PipelineD::attachInnerQueryExecutorToPipeline(
+                    collection,
+                    attachExecutorCallback.first,
+                    std::move(attachExecutorCallback.second),
+                    pipeline.get());
 
-                execs.emplace_back(plan_executor_factory::make(
-                    std::move(pipelineExpCtx),
-                    std::move(pipelineIt),
-                    aggregation_request_helper::getResumableScanType(
-                        request, liteParsedPipeline.hasChangeStream())));
+                auto pipelines = createExchangePipelinesIfNeeded(
+                    opCtx, expCtx, request, std::move(pipeline), uuid);
+                for (auto&& pipelineIt : pipelines) {
+                    // There are separate ExpressionContexts for each exchange pipeline, so make
+                    // sure to pass the pipeline's ExpressionContext to the plan executor factory.
+                    auto pipelineExpCtx = pipelineIt->getContext();
+
+                    execs.emplace_back(plan_executor_factory::make(
+                        std::move(pipelineExpCtx),
+                        std::move(pipelineIt),
+                        aggregation_request_helper::getResumableScanType(
+                            request, liteParsedPipeline.hasChangeStream())));
+                }
             }
 
             // With the pipelines created, we can relinquish locks as they will manage the locks
@@ -913,7 +938,7 @@ Status runAggregate(OperationContext* opCtx,
     } else {
         // Cursor must be specified, if explain is not.
         const bool keepCursor = handleCursorCommand(
-            opCtx, expCtx, origNss, std::move(cursors), request, cmdObj, result);
+            opCtx, expCtx, origNss, std::move(cursors), request, cmdObj, result, usedSBE);
         if (keepCursor) {
             cursorFreer.dismiss();
         }

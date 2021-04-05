@@ -71,7 +71,8 @@ public:
               bool forward,
               PlanYieldPolicy* yieldPolicy,
               PlanNodeId nodeId,
-              ScanCallbacks scanCallbacks);
+              ScanCallbacks scanCallbacks,
+              bool useRandomCursor = false);
 
     std::unique_ptr<PlanStage> clone() const final;
 
@@ -126,6 +127,9 @@ private:
     value::SlotAccessor* _indexKeyPatternAccessor{nullptr};
     RuntimeEnvironment::Accessor* _oplogTsAccessor{nullptr};
 
+    // Used to return a random sample of the collection.
+    const bool _useRandomCursor;
+
     value::FieldAccessorMap _fieldAccessors;
     value::SlotAccessorMap _varAccessors;
     value::SlotAccessor* _seekKeyAccessor{nullptr};
@@ -133,6 +137,8 @@ private:
     bool _open{false};
 
     std::unique_ptr<SeekableRecordCursor> _cursor;
+    std::unique_ptr<RecordCursor> _randomCursor;
+
     boost::optional<AutoGetCollectionForReadMaybeLockFree> _coll;
     RecordId _key;
     bool _firstGetNext{false};

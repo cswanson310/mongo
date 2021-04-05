@@ -29,6 +29,8 @@
 
 #pragma once
 
+#include <boost/iostreams/device/mapped_file.hpp>
+
 #include "mongo/db/exec/sbe/stages/stages.h"
 #include "mongo/db/exec/sbe/values/bson.h"
 
@@ -38,6 +40,12 @@ class BSONScanStage final : public PlanStage {
 public:
     BSONScanStage(const char* bsonBegin,
                   const char* bsonEnd,
+                  boost::optional<value::SlotId> recordSlot,
+                  std::vector<std::string> fields,
+                  value::SlotVector vars,
+                  PlanNodeId planNodeId);
+
+    BSONScanStage(std::string fileName,
                   boost::optional<value::SlotId> recordSlot,
                   std::vector<std::string> fields,
                   value::SlotVector vars,
@@ -57,8 +65,12 @@ public:
     std::vector<DebugPrinter::Block> debugPrint() const final;
 
 private:
-    const char* const _bsonBegin;
-    const char* const _bsonEnd;
+    // This is not an ideal place to store the bson bytes here but it will do for now.
+    const std::string _fileName;
+    boost::iostreams::mapped_file_source _mappedFile;
+
+    const char* _bsonBegin;
+    const char* _bsonEnd;
 
     const boost::optional<value::SlotId> _recordSlot;
     const std::vector<std::string> _fields;
@@ -70,6 +82,121 @@ private:
     value::SlotAccessorMap _varAccessors;
 
     const char* _bsonCurrent;
+
+    ScanStats _specificStats;
+};
+
+class ParallelBsonScanStage final : public PlanStage {
+    struct BsonRange {
+        const char* begin;
+        const char* end;
+        size_t count;
+    };
+
+    struct ParallelState {
+        Mutex mutex = MONGO_MAKE_LATCH("ParallelBsonScanStage::ParallelState::mutex");
+
+        // This is not an ideal place to store the bson bytes here but it will do for now.
+        const std::string fileName;
+        boost::iostreams::mapped_file_source mappedFile;
+
+        const char* bsonBegin{nullptr};
+        const char* bsonEnd{nullptr};
+
+        std::vector<BsonRange> ranges;
+        AtomicWord<size_t> currentRange{0};
+
+        ParallelState(const char* begin, const char* end) : bsonBegin(begin), bsonEnd(end) {}
+        ParallelState(const std::string& name) : fileName(name) {}
+    };
+
+public:
+    ParallelBsonScanStage(const char* bsonBegin,
+                          const char* bsonEnd,
+                          boost::optional<value::SlotId> recordSlot,
+                          std::vector<std::string> fields,
+                          value::SlotVector vars,
+                          PlanNodeId planNodeId);
+
+    ParallelBsonScanStage(std::string fileName,
+                          boost::optional<value::SlotId> recordSlot,
+                          std::vector<std::string> fields,
+                          value::SlotVector vars,
+                          PlanNodeId planNodeId);
+
+    ParallelBsonScanStage(const std::shared_ptr<ParallelState>& state,
+                          boost::optional<value::SlotId> recordSlot,
+                          std::vector<std::string> fields,
+                          value::SlotVector vars,
+                          PlanNodeId planNodeId);
+
+    std::unique_ptr<PlanStage> clone() const final;
+
+    void prepare(CompileCtx& ctx) final;
+    value::SlotAccessor* getAccessor(CompileCtx& ctx, value::SlotId slot) final;
+    void open(bool reOpen) final;
+    PlanState getNext() final;
+    void close() final;
+
+    std::unique_ptr<PlanStageStats> getStats(bool /*includeDebugInfo*/) const final;
+    const SpecificStats* getSpecificStats() const final;
+
+    std::vector<DebugPrinter::Block> debugPrint() const final;
+
+private:
+    void nextRange() {
+        _currentRange = _state->currentRange.fetchAndAdd(1);
+        if (_currentRange < _state->ranges.size()) {
+            _range = _state->ranges[_currentRange];
+        }
+    }
+
+    std::shared_ptr<ParallelState> _state;
+
+    const boost::optional<value::SlotId> _recordSlot;
+    const std::vector<std::string> _fields;
+    const value::SlotVector _vars;
+
+    std::unique_ptr<value::ViewOfValueAccessor> _recordAccessor;
+
+    value::FieldAccessorMap _fieldAccessors;
+    value::SlotAccessorMap _varAccessors;
+
+    size_t _currentRange{std::numeric_limits<std::size_t>::max()};
+    BsonRange _range;
+
+    ScanStats _specificStats;
+};
+
+class BSONScanStdinStage final : public PlanStage {
+public:
+    BSONScanStdinStage(boost::optional<value::SlotId> recordSlot,
+                       std::vector<std::string> fields,
+                       value::SlotVector vars,
+                       PlanNodeId planNodeId);
+
+    std::unique_ptr<PlanStage> clone() const final;
+
+    void prepare(CompileCtx& ctx) final;
+    value::SlotAccessor* getAccessor(CompileCtx& ctx, value::SlotId slot) final;
+    void open(bool reOpen) final;
+    PlanState getNext() final;
+    void close() final;
+
+    std::unique_ptr<PlanStageStats> getStats(bool /*includeDebugInfo*/) const final;
+    const SpecificStats* getSpecificStats() const final;
+
+    std::vector<DebugPrinter::Block> debugPrint() const final;
+
+private:
+    const boost::optional<value::SlotId> _recordSlot;
+    const std::vector<std::string> _fields;
+    const value::SlotVector _vars;
+
+    std::unique_ptr<value::OwnedValueAccessor> _recordAccessor;
+
+    value::FieldAccessorMap _fieldAccessors;
+    value::SlotAccessorMap _varAccessors;
 
     ScanStats _specificStats;
 };

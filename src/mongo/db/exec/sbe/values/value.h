@@ -122,6 +122,9 @@ enum class TypeTags : uint8_t {
     bsonDBPointer,
     bsonCodeWScope,
 
+    // Local lambda value
+    LocalLambda,
+
     // KeyString::Value
     ksValue,
 
@@ -709,6 +712,10 @@ inline StringData getStringView(TypeTags tag, const Value& val) noexcept {
 
 inline StringData getStringOrSymbolView(TypeTags tag, const Value& val) noexcept {
     tag = (tag == TypeTags::bsonSymbol) ? TypeTags::StringBig : tag;
+    return {getRawStringView(tag, val), getStringLength(tag, val)};
+}
+
+inline StringData getStringDataView(TypeTags tag, const Value& val) noexcept {
     return {getRawStringView(tag, val), getStringLength(tag, val)};
 }
 
