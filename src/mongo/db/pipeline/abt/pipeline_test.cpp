@@ -54,7 +54,7 @@ std::unique_ptr<mongo::Pipeline, mongo::PipelineDeleter> parsePipeline(
         rawPipeline.push_back(stageElem.embeddedObject());
     }
 
-    AggregateCommand request(nss, rawPipeline);
+    AggregateCommandRequest request(nss, rawPipeline);
     boost::intrusive_ptr<ExpressionContextForTest> ctx(
         new ExpressionContextForTest(&opCtx, request));
 

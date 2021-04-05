@@ -141,7 +141,7 @@ ResultSet runPipeline(const ContextFn& fn,
     expCtx.reset(new ExpressionContext(fn().get(), nullptr, nss));
 
     std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> planExec =
-        plan_executor_factory::make(expCtx, std::move(pipeline), false);
+        plan_executor_factory::make(expCtx, std::move(pipeline));
 
     ResultSet results;
     bool done = false;

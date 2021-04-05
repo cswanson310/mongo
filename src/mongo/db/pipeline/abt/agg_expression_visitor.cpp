@@ -203,6 +203,10 @@ public:
         unsupportedExpression("$dateToString");
     }
 
+    void visit(ExpressionDateTrunc* expr) override final {
+        unsupportedExpression("$dateTrunc");
+    }
+
     void visit(ExpressionDivide* expr) override final {
         pushArithmeticBinaryExpr(expr, Operations::Div);
     }

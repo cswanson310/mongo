@@ -342,7 +342,7 @@ std::unique_ptr<sbe::PlanStage> SBENodeLowering::walk(const ExchangeNode& n,
 
                 args.emplace_back(sbe::makeE<sbe::EVariable>(it->second));
             }
-            partitionExpr = sbe::makeE<sbe::EFunction>("hash"sv, std::move(args));
+            partitionExpr = sbe::makeE<sbe::EFunction>("hash"_sd, std::move(args));
             break;
         }
 
@@ -482,8 +482,10 @@ std::unique_ptr<sbe::PlanStage> SBENodeLowering::walk(const GroupByNode& n,
         aggs.emplace(slot, std::move(expr));
     }
 
+    // TODO: use collator slot.
+    boost::optional<sbe::value::SlotId> collatorSlot;
     return sbe::makeS<sbe::HashAggStage>(
-        std::move(input), std::move(gbs), std::move(aggs), kEmptyPlanNodeId);
+        std::move(input), std::move(gbs), std::move(aggs), collatorSlot, kEmptyPlanNodeId);
 }
 
 std::unique_ptr<sbe::PlanStage> SBENodeLowering::walk(const BinaryJoinNode& n,
@@ -533,12 +535,15 @@ std::unique_ptr<sbe::PlanStage> SBENodeLowering::walk(const HashJoinNode& n,
         return convertProjectionsToSlots(requiredProjections.getVector());
     };
 
+    // TODO: use collator slot.
+    boost::optional<sbe::value::SlotId> collatorSlot;
     return sbe::makeS<sbe::HashJoinStage>(std::move(outerStage),
                                           std::move(innerStage),
                                           convertProjectionsToSlots(n.getLeftKeys()),
                                           convertChildProjectionsToSlots(n.getLeftChild()),
                                           convertProjectionsToSlots(n.getRightKeys()),
                                           convertChildProjectionsToSlots(n.getRightChild()),
+                                          collatorSlot,
                                           kEmptyPlanNodeId);
 }
 
