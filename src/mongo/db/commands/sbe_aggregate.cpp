@@ -332,6 +332,7 @@ std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> optimizeAndCreateExecutor(
     stage_builder::PlanStageData data{std::make_unique<sbe::RuntimeEnvironment>()};
     data.outputs.set(stage_builder::PlanStageSlots::kResult, slotMap.begin()->second);
 
+    sbePlan->attachToOperationContext(opCtx);
     auto planExec =
         uassertStatusOK(plan_executor_factory::make(opCtx,
                                                     nullptr /*cq*/,
@@ -341,7 +342,6 @@ std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> optimizeAndCreateExecutor(
                                                     QueryPlannerParams::Options::DEFAULT,
                                                     nss,
                                                     nullptr /*yieldPolicy*/));
-    planExec->reattachToOperationContext(opCtx);
     return planExec;
 }
 
