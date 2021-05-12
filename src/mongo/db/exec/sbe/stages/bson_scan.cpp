@@ -517,7 +517,6 @@ PlanState BSONScanStdinStage::getNext() {
     auto val = value::bitcastFrom<const char*>(buf);
     value::ValueGuard guard{tag, val};
 
-    memcpy(buf, sizeBuf, sizeof(sizeBuf));
     size_t totalRead = sizeof(sizeBuf);
     while ((n = readStdin(buf + totalRead, size - totalRead)) > 0) {
         totalRead += n;
