@@ -695,6 +695,14 @@ public:
         unsupportedExpression("dateSubtract");
     }
 
+    void visit(ExpressionSetField* expr) override final {
+        unsupportedExpression("$setField");
+    }
+
+    void visit(ExpressionGetField* expr) override final {
+        unsupportedExpression("$getField");
+    }
+
 private:
     /**
      * Shared logic for $and, $or. Converts each child into an EExpression that evaluates to Boolean

@@ -169,6 +169,7 @@ private:
         uassert(0, "Lowering failed", sbePlan != nullptr);
         uassert(0, "Invalid slot map size", slotMap.size() == 1);
 
+        sbePlan->attachToOperationContext(_opCtx);
         sbe::CompileCtx ctx(std::make_unique<sbe::RuntimeEnvironment>());
         sbePlan->prepare(ctx);
 
@@ -177,7 +178,6 @@ private:
             accessors.emplace_back(sbePlan->getAccessor(ctx, slot));
         }
 
-        sbePlan->attachToOperationContext(_opCtx);
         sbePlan->open(false);
         ON_BLOCK_EXIT([&] { sbePlan->close(); });
 

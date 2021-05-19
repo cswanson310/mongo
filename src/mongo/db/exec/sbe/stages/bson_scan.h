@@ -159,7 +159,7 @@ private:
 
     std::unique_ptr<value::ViewOfValueAccessor> _recordAccessor;
 
-    value::FieldAccessorMap _fieldAccessors;
+    value::FieldViewAccessorMap _fieldAccessors;
     value::SlotAccessorMap _varAccessors;
 
     size_t _currentRange{std::numeric_limits<std::size_t>::max()};
@@ -195,7 +195,7 @@ private:
 
     std::unique_ptr<value::OwnedValueAccessor> _recordAccessor;
 
-    value::FieldAccessorMap _fieldAccessors;
+    value::FieldViewAccessorMap _fieldAccessors;
     value::SlotAccessorMap _varAccessors;
 
     ScanStats _specificStats;

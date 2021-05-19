@@ -35,11 +35,6 @@
 #include "mongo/db/pipeline/abt/match_expression_visitor.h"
 #include "mongo/db/pipeline/abt/utils.h"
 #include "mongo/db/pipeline/document_source_bucket_auto.h"
-#include "mongo/db/pipeline/document_source_change_stream.h"
-#include "mongo/db/pipeline/document_source_change_stream_close_cursor.h"
-#include "mongo/db/pipeline/document_source_change_stream_transform.h"
-#include "mongo/db/pipeline/document_source_check_invalidate.h"
-#include "mongo/db/pipeline/document_source_check_resume_token.h"
 #include "mongo/db/pipeline/document_source_coll_stats.h"
 #include "mongo/db/pipeline/document_source_current_op.h"
 #include "mongo/db/pipeline/document_source_cursor.h"
@@ -77,11 +72,11 @@
 #include "mongo/db/pipeline/document_source_tee_consumer.h"
 #include "mongo/db/pipeline/document_source_union_with.h"
 #include "mongo/db/pipeline/document_source_unwind.h"
+#include "mongo/db/pipeline/document_source_update_on_add_shard.h"
 #include "mongo/db/pipeline/visitors/document_source_walker.h"
 #include "mongo/db/pipeline/visitors/transformer_interface_walker.h"
 #include "mongo/db/query/optimizer/utils.h"
 #include "mongo/s/query/document_source_merge_cursors.h"
-#include "mongo/s/query/document_source_update_on_add_shard.h"
 #include "mongo/util/string_map.h"
 
 namespace mongo::optimizer {
@@ -394,26 +389,6 @@ public:
         unsupportedStage(source);
     }
 
-    void visit(const DocumentSourceCloseCursor* source) override {
-        unsupportedStage(source);
-    }
-
-    void visit(const DocumentSourceChangeStreamTransform* source) override {
-        unsupportedStage(source);
-    }
-
-    void visit(const DocumentSourceCheckInvalidate* source) override {
-        unsupportedStage(source);
-    }
-
-    void visit(const DocumentSourceCheckResumability* source) override {
-        unsupportedStage(source);
-    }
-
-    void visit(const DocumentSourceEnsureResumeTokenPresent* source) override {
-        unsupportedStage(source);
-    }
-
     void visit(const DocumentSourceCollStats* source) override {
         unsupportedStage(source);
     }
@@ -546,14 +521,6 @@ public:
         unsupportedStage(source);
     }
 
-    void visit(const DocumentSourceLookupChangePostImage* source) override {
-        unsupportedStage(source);
-    }
-
-    void visit(const DocumentSourceLookupChangePreImage* source) override {
-        unsupportedStage(source);
-    }
-
     void visit(const DocumentSourceMatch* source) override {
         auto entry = _ctx.getNode();
         ABT matchExpr = generateMatchExpression(source->getMatchExpression(),
@@ -576,10 +543,6 @@ public:
     }
 
     void visit(const DocumentSourceOperationMetrics* source) override {
-        unsupportedStage(source);
-    }
-
-    void visit(const DocumentSourceOplogMatch* source) override {
         unsupportedStage(source);
     }
 

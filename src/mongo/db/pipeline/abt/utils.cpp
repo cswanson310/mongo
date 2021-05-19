@@ -81,7 +81,7 @@ std::pair<sbe::value::TypeTags, sbe::value::Value> convertFrom(const Value val) 
     val.addToBsonObj(&bob, ""_sd);
     auto obj = bob.done();
     auto be = obj.objdata();
-    auto end = be + sbe::value::readFromMemory<uint32_t>(be);
+    auto end = be + ConstDataView(be).read<LittleEndian<uint32_t>>();
     return sbe::bson::convertFrom(false, be + 4, end, 0);
 }
 

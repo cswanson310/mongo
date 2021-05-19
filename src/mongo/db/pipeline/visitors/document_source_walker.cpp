@@ -30,11 +30,6 @@
 #include "mongo/db/pipeline/visitors/document_source_walker.h"
 #include "mongo/base/error_codes.h"
 #include "mongo/db/pipeline/document_source_bucket_auto.h"
-#include "mongo/db/pipeline/document_source_change_stream.h"
-#include "mongo/db/pipeline/document_source_change_stream_close_cursor.h"
-#include "mongo/db/pipeline/document_source_change_stream_transform.h"
-#include "mongo/db/pipeline/document_source_check_invalidate.h"
-#include "mongo/db/pipeline/document_source_check_resume_token.h"
 #include "mongo/db/pipeline/document_source_coll_stats.h"
 #include "mongo/db/pipeline/document_source_current_op.h"
 #include "mongo/db/pipeline/document_source_cursor.h"
@@ -71,8 +66,8 @@
 #include "mongo/db/pipeline/document_source_tee_consumer.h"
 #include "mongo/db/pipeline/document_source_union_with.h"
 #include "mongo/db/pipeline/document_source_unwind.h"
+#include "mongo/db/pipeline/document_source_update_on_add_shard.h"
 #include "mongo/s/query/document_source_merge_cursors.h"
-#include "mongo/s/query/document_source_update_on_add_shard.h"
 
 namespace mongo {
 
@@ -101,12 +96,6 @@ void DocumentSourceWalker::walk(const Pipeline& pipeline) {
             const DocumentSource* ds = it->get();
             const bool visited = visitHelper<DocumentSourceBucketAuto>(ds) ||
                 visitHelper<DocumentSourceBucketAuto>(ds) ||
-                visitHelper<DocumentSourceOplogMatch>(ds) ||
-                visitHelper<DocumentSourceCloseCursor>(ds) ||
-                visitHelper<DocumentSourceChangeStreamTransform>(ds) ||
-                visitHelper<DocumentSourceCheckInvalidate>(ds) ||
-                visitHelper<DocumentSourceCheckResumability>(ds) ||
-                visitHelper<DocumentSourceEnsureResumeTokenPresent>(ds) ||
                 visitHelper<DocumentSourceCollStats>(ds) ||
                 visitHelper<DocumentSourceCurrentOp>(ds) ||
                 // TODO: uncomment after fixing dependency
@@ -125,10 +114,8 @@ void DocumentSourceWalker::walk(const Pipeline& pipeline) {
                 visitHelper<DocumentSourceListCachedAndActiveUsers>(ds) ||
                 visitHelper<DocumentSourceListLocalSessions>(ds) ||
                 visitHelper<DocumentSourceListSessions>(ds) ||
-                visitHelper<DocumentSourceLookUp>(ds) ||
-                visitHelper<DocumentSourceLookupChangePostImage>(ds) ||
-                visitHelper<DocumentSourceLookupChangePreImage>(ds) ||
-                visitHelper<DocumentSourceMatch>(ds) || visitHelper<DocumentSourceMerge>(ds) ||
+                visitHelper<DocumentSourceLookUp>(ds) || visitHelper<DocumentSourceMatch>(ds) ||
+                visitHelper<DocumentSourceMerge>(ds) ||
                 // TODO: uncomment after fixing dependency
                 // visitHelper<DocumentSourceMergeCursors>(ds) ||
                 visitHelper<DocumentSourceOperationMetrics>(ds) ||

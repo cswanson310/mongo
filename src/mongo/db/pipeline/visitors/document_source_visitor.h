@@ -34,12 +34,6 @@
 namespace mongo {
 
 class DocumentSourceBucketAuto;
-class DocumentSourceOplogMatch;
-class DocumentSourceCloseCursor;
-class DocumentSourceChangeStreamTransform;
-class DocumentSourceCheckInvalidate;
-class DocumentSourceCheckResumability;
-class DocumentSourceEnsureResumeTokenPresent;
 class DocumentSourceCollStats;
 class DocumentSourceCurrentOp;
 class DocumentSourceCursor;
@@ -58,8 +52,6 @@ class DocumentSourceListCachedAndActiveUsers;
 class DocumentSourceListLocalSessions;
 class DocumentSourceListSessions;
 class DocumentSourceLookUp;
-class DocumentSourceLookupChangePostImage;
-class DocumentSourceLookupChangePreImage;
 class DocumentSourceMatch;
 class DocumentSourceMerge;
 class DocumentSourceMergeCursors;
@@ -91,15 +83,6 @@ template <bool IsConst = false>
 class DocumentSourceVisitor {
 public:
     virtual void visit(tree_walker::MaybeConstPtr<IsConst, DocumentSourceBucketAuto> source) = 0;
-    virtual void visit(tree_walker::MaybeConstPtr<IsConst, DocumentSourceCloseCursor> source) = 0;
-    virtual void visit(
-        tree_walker::MaybeConstPtr<IsConst, DocumentSourceChangeStreamTransform> source) = 0;
-    virtual void visit(
-        tree_walker::MaybeConstPtr<IsConst, DocumentSourceCheckInvalidate> source) = 0;
-    virtual void visit(
-        tree_walker::MaybeConstPtr<IsConst, DocumentSourceCheckResumability> source) = 0;
-    virtual void visit(
-        tree_walker::MaybeConstPtr<IsConst, DocumentSourceEnsureResumeTokenPresent> source) = 0;
     virtual void visit(tree_walker::MaybeConstPtr<IsConst, DocumentSourceCollStats> source) = 0;
     virtual void visit(tree_walker::MaybeConstPtr<IsConst, DocumentSourceCurrentOp> source) = 0;
     virtual void visit(tree_walker::MaybeConstPtr<IsConst, DocumentSourceCursor> source) = 0;
@@ -123,16 +106,11 @@ public:
         tree_walker::MaybeConstPtr<IsConst, DocumentSourceListLocalSessions> source) = 0;
     virtual void visit(tree_walker::MaybeConstPtr<IsConst, DocumentSourceListSessions> source) = 0;
     virtual void visit(tree_walker::MaybeConstPtr<IsConst, DocumentSourceLookUp> source) = 0;
-    virtual void visit(
-        tree_walker::MaybeConstPtr<IsConst, DocumentSourceLookupChangePostImage> source) = 0;
-    virtual void visit(
-        tree_walker::MaybeConstPtr<IsConst, DocumentSourceLookupChangePreImage> source) = 0;
     virtual void visit(tree_walker::MaybeConstPtr<IsConst, DocumentSourceMatch> source) = 0;
     virtual void visit(tree_walker::MaybeConstPtr<IsConst, DocumentSourceMerge> source) = 0;
     virtual void visit(tree_walker::MaybeConstPtr<IsConst, DocumentSourceMergeCursors> source) = 0;
     virtual void visit(
         tree_walker::MaybeConstPtr<IsConst, DocumentSourceOperationMetrics> source) = 0;
-    virtual void visit(tree_walker::MaybeConstPtr<IsConst, DocumentSourceOplogMatch> source) = 0;
     virtual void visit(tree_walker::MaybeConstPtr<IsConst, DocumentSourceOut> source) = 0;
     virtual void visit(
         tree_walker::MaybeConstPtr<IsConst, DocumentSourcePlanCacheStats> source) = 0;

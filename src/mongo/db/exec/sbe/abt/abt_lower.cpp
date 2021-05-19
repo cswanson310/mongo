@@ -652,26 +652,36 @@ std::unique_ptr<sbe::PlanStage> SBENodeLowering::lowerScanNode(
         // Unused.
         boost::optional<sbe::value::SlotId> seekKeySlot;
 
+        sbe::ScanCallbacks callbacks({}, {}, {}, {});
         if (useParallelScan) {
             return sbe::makeS<sbe::ParallelScanStage>(nss.uuid().get(),
                                                       rootSlot,
                                                       ridSlot,
+                                                      boost::none,
+                                                      boost::none,
+                                                      boost::none,
+                                                      boost::none,
                                                       fields,
                                                       vars,
                                                       nullptr /*yieldPolicy*/,
-                                                      kEmptyPlanNodeId);
+                                                      kEmptyPlanNodeId,
+                                                      callbacks);
         } else {
             return sbe::makeS<sbe::ScanStage>(nss.uuid().get(),
                                               rootSlot,
                                               ridSlot,
+                                              boost::none,
+                                              boost::none,
+                                              boost::none,
+                                              boost::none,
+                                              boost::none,
                                               fields,
                                               vars,
                                               seekKeySlot,
                                               true /*forward*/,
                                               nullptr /*yieldPolicy*/,
                                               kEmptyPlanNodeId,
-                                              sbe::LockAcquisitionCallback{},
-                                              sbe::ScanOpenCallback{},
+                                              callbacks,
                                               _randomScan);
         }
     }
@@ -847,6 +857,7 @@ std::unique_ptr<sbe::PlanStage> SBENodeLowering::walk(const IndexScanNode& n, co
                                                       !indexSpec.isReverseOrder(),
                                                       resultSlot,
                                                       ridSlot,
+                                                      boost::none,
                                                       indexKeysToInclude,
                                                       vars,
                                                       seekKeySlotLower,
@@ -880,17 +891,22 @@ std::unique_ptr<sbe::PlanStage> SBENodeLowering::walk(const SeekNode& n,
 
     boost::optional<sbe::value::SlotId> seekKeySlot = _slotMap.at(n.getRIDProjectionName());
 
+    sbe::ScanCallbacks callbacks({}, {}, {}, {});
     auto seekStage = sbe::makeS<sbe::ScanStage>(nss.uuid().get(),
                                                 rootSlot,
                                                 ridSlot,
+                                                boost::none,
+                                                boost::none,
+                                                boost::none,
+                                                boost::none,
+                                                boost::none,
                                                 fields,
                                                 vars,
                                                 seekKeySlot,
                                                 true /*forward*/,
                                                 nullptr /*yieldPolicy*/,
                                                 kEmptyPlanNodeId,
-                                                sbe::LockAcquisitionCallback{},
-                                                sbe::ScanOpenCallback{});
+                                                callbacks);
 
     return sbe::makeS<sbe::LimitSkipStage>(
         std::move(seekStage), 1 /*limit*/, 0 /*skip*/, kEmptyPlanNodeId);
