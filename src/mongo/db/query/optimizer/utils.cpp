@@ -600,19 +600,17 @@ static bool mergeAppendPartialSchemaReq(PartialSchemaRequirements& reqMap,
     // Try to merge with an entry which refers to us.
     for (auto it = reqMap.begin(); it != reqMap.cend();) {
         const auto& [existingKey, existingReq] = *it;
-        if (existingKey._projectionName != req.getBoundProjectionName()) {
+        if (existingKey._projectionName != req.getBoundProjectionName() ||
+            !existingKey.emptyPath()) {
             it++;
             continue;
         }
 
-        if (existingKey.emptyPath()) {
-            uassert(0, "Should not be merging with more than one empty path entry.", !result);
-            uassert(0,
-                    "Empty path entry should not be binding.",
-                    !existingReq.hasBoundProjectionName());
+        uassert(0, "Should not be merging with more than one empty path entry.", !result);
+        uassert(
+            0, "Empty path entry should not be binding.", !existingReq.hasBoundProjectionName());
 
-            result = true;
-        }
+        result = true;
 
         PartialSchemaKey mergedKey = key;
 
@@ -621,7 +619,9 @@ static bool mergeAppendPartialSchemaReq(PartialSchemaRequirements& reqMap,
         appender.append(mergedKey._path);
 
         PartialSchemaRequirement mergedReq = existingReq;
-        mergedReq.setBoundProjectionName(req.getBoundProjectionName());
+        if (mergedKey._path == key._path) {
+            mergedReq.setBoundProjectionName(req.getBoundProjectionName());
+        }
 
         it = reqMap.erase(it);
         reqMap.emplace(std::move(mergedKey), std::move(mergedReq));
@@ -661,6 +661,16 @@ bool intersectPartialSchemaReq(PartialSchemaRequirements& target,
             return false;
         }
     }
+
+    // Validate merged map does not contain duplicate bound projections.
+    ProjectionNameSet boundsProjectionNameSet;
+    for (const auto& entry : target) {
+        const ProjectionName& boundProjName = entry.second.getBoundProjectionName();
+        if (!boundProjName.empty() && !boundsProjectionNameSet.insert(boundProjName).second) {
+            uasserted(0, "Duplicate bound projection");
+        }
+    }
+
     return true;
 }
 
