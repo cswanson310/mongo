@@ -60,7 +60,6 @@ LogicalRewriter::RewriteSet LogicalRewriter::_rewriteSet = {
     {LogicalRewriteType::LimitSkipMerge, 1},
 
     {LogicalRewriteType::GroupByLocalGlobal, 1},
-    {LogicalRewriteType::FilterDecompose, 1},
 
     {LogicalRewriteType::SargableFilterConvert, 2},
     {LogicalRewriteType::SargableEvaluationConvert, 2},
@@ -569,28 +568,6 @@ struct RewriteConvert<GroupByNode> {
     }
 };
 
-template <>
-struct RewriteConvert<FilterNode> {
-    void operator()(ABT::reference_type node, RewriteContext& ctx) {
-        const FilterNode& filterNode = *node.cast<FilterNode>();
-
-        if (auto evalFilter = filterNode.getFilter().cast<EvalFilter>(); evalFilter != nullptr) {
-            if (auto composition = evalFilter->getPath().cast<PathComposeM>();
-                composition != nullptr) {
-                // Remove the path composition and insert two filter nodes.
-                ABT filterNode1 = make<FilterNode>(
-                    make<EvalFilter>(composition->getPath1(), evalFilter->getInput()),
-                    filterNode.getChild());
-                ABT filterNode2 = make<FilterNode>(
-                    make<EvalFilter>(composition->getPath2(), evalFilter->getInput()),
-                    std::move(filterNode1));
-
-                ctx.addNode(filterNode2);
-            }
-        }
-    }
-};
-
 LogicalRewriter::RewriteFnMap LogicalRewriter::initializeRewrites() {
     RewriteFnMap result;
     const auto setRewriteEntry = [this, &result](const LogicalRewriteType rewriteType,
@@ -648,8 +625,6 @@ LogicalRewriter::RewriteFnMap LogicalRewriter::initializeRewrites() {
 
     setRewriteEntry(LogicalRewriteType::GroupByLocalGlobal,
                     &LogicalRewriter::bindSingleNode<GroupByNode, RewriteConvert>);
-    setRewriteEntry(LogicalRewriteType::FilterDecompose,
-                    &LogicalRewriter::bindSingleNode<FilterNode, RewriteConvert>);
 
     setRewriteEntry(LogicalRewriteType::SargableMerge,
                     &LogicalRewriter::bindAboveBelow<SargableNode, SargableNode, RewriteMerge>);

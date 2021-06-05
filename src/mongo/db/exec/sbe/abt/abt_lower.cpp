@@ -274,6 +274,8 @@ std::unique_ptr<sbe::PlanStage> SBENodeLowering::walk(const EvaluationNode& n,
 std::unique_ptr<sbe::PlanStage> SBENodeLowering::walk(const FilterNode& n,
                                                       const ABT& child,
                                                       const ABT& filter) {
+    uassert(0, "Should not have input var temp flag set at this point", !n.isInputVarTemp());
+
     auto input = generateInternal(child);
     auto expr = SBEExpressionLowering{_env, _slotMap}.optimize(filter);
 

@@ -51,11 +51,17 @@ public:
         ConstEvalPre,
         PathFuse,
 
+        // Filter rewrites manipulate filter expressions.
+        Filter,
+
         // Most logical rewrites are in this phase, such as filter-filter reorder, evaluation-filter
         // reorder and similar.
         MemoLogicalRewritePhase,
         // Cascades-style optimization.
         MemoPhysicalRewritePhase,
+
+        // Lowers compound index intervals to singular ones.
+        IndexBoundsLower,
 
         PathLower,
         ConstEvalPost
@@ -95,7 +101,7 @@ private:
     bool hasPhase(const OptPhase phase) const;
 
     template <class C>
-    bool runStructuralPhase(const OptPhase phase, VariableEnvironment& env, ABT& input);
+    bool runStructuralPhase(C instance, const OptPhase phase, VariableEnvironment& env, ABT& input);
 
     bool runMemoLogicalRewrite(const OptPhase phase,
                                VariableEnvironment& env,

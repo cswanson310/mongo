@@ -418,7 +418,11 @@ public:
                              ExplainPrinter childResult,
                              ExplainPrinter filterResult) {
         ExplainPrinter printer;
-        printer << "Filter []" << MarkChildCount(2) << filterResult << childResult;
+        printer << "Filter [";
+        if (node.isInputVarTemp()) {
+            printer << "<inputVarTemp>";
+        }
+        printer << "]" << MarkChildCount(2) << filterResult << childResult;
         return printer;
     }
 

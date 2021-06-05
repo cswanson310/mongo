@@ -32,6 +32,8 @@
 #include "mongo/db/query/optimizer/cascades/logical_props_derivation.h"
 #include "mongo/db/query/optimizer/cascades/physical_rewriter.h"
 #include "mongo/db/query/optimizer/rewrites/const_eval.h"
+#include "mongo/db/query/optimizer/rewrites/filter.h"
+#include "mongo/db/query/optimizer/rewrites/index_bounds_lower.h"
 #include "mongo/db/query/optimizer/rewrites/path.h"
 #include "mongo/db/query/optimizer/rewrites/path_lower.h"
 
@@ -39,8 +41,10 @@ namespace mongo::optimizer {
 
 OptPhaseManager::PhaseSet OptPhaseManager::_allRewrites = {OptPhase::ConstEvalPre,
                                                            OptPhase::PathFuse,
+                                                           OptPhase::Filter,
                                                            OptPhase::MemoLogicalRewritePhase,
                                                            OptPhase::MemoPhysicalRewritePhase,
+                                                           OptPhase::IndexBoundsLower,
                                                            OptPhase::PathLower,
                                                            OptPhase::ConstEvalPost};
 
@@ -76,14 +80,14 @@ OptPhaseManager::OptPhaseManager(OptPhaseManager::PhaseSet phaseSet,
       _prefixId(prefixId) {}
 
 template <class C>
-bool OptPhaseManager::runStructuralPhase(const OptPhase phase,
+bool OptPhaseManager::runStructuralPhase(C instance,
+                                         const OptPhase phase,
                                          VariableEnvironment& env,
                                          ABT& input) {
     if (!hasPhase(phase)) {
         return true;
     }
 
-    C instance(env);
     for (int iterationCount = 0; instance.optimize(input); iterationCount++) {
         if (_debugInfo.exceedsIterationLimit(iterationCount)) {
             // Iteration limit exceeded.
@@ -204,10 +208,13 @@ bool OptPhaseManager::optimize(ABT& input) {
         return false;
     }
 
-    if (!runStructuralPhase<ConstEval>(OptPhase::ConstEvalPre, env, input)) {
+    if (!runStructuralPhase(ConstEval{env}, OptPhase::ConstEvalPre, env, input)) {
         return false;
     }
-    if (!runStructuralPhase<PathFusion>(OptPhase::PathFuse, env, input)) {
+    if (!runStructuralPhase(PathFusion{env}, OptPhase::PathFuse, env, input)) {
+        return false;
+    }
+    if (!runStructuralPhase(FilterRewriter{_prefixId}, OptPhase::Filter, env, input)) {
         return false;
     }
 
@@ -215,10 +222,14 @@ bool OptPhaseManager::optimize(ABT& input) {
         return false;
     }
 
-    if (!runStructuralPhase<PathLowering>(OptPhase::PathLower, env, input)) {
+    if (!runStructuralPhase(
+            IndexBoundsLowerRewriter{_prefixId}, OptPhase::IndexBoundsLower, env, input)) {
         return false;
     }
-    if (!runStructuralPhase<ConstEval>(OptPhase::ConstEvalPost, env, input)) {
+    if (!runStructuralPhase(PathLowering{env}, OptPhase::PathLower, env, input)) {
+        return false;
+    }
+    if (!runStructuralPhase(ConstEval{env}, OptPhase::ConstEvalPost, env, input)) {
         return false;
     }
 

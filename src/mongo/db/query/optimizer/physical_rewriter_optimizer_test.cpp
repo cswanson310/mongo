@@ -1017,7 +1017,8 @@ TEST(PhysOptimizer, IndexBoundsIntersect) {
 
     OptPhaseManager phaseManager(
         {OptPhaseManager::OptPhase::MemoLogicalRewritePhase,
-         OptPhaseManager::OptPhase::MemoPhysicalRewritePhase},
+         OptPhaseManager::OptPhase::MemoPhysicalRewritePhase,
+         OptPhaseManager::OptPhase::IndexBoundsLower},
         prefixId,
         {{{"c1",
            ScanDefinition{{},

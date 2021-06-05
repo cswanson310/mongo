@@ -23,6 +23,8 @@ env.Library(
         "props.cpp",
         "reference_tracker.cpp",
         "rewrites/const_eval.cpp",
+        "rewrites/filter.cpp",
+        "rewrites/index_bounds_lower.cpp",
         "rewrites/path.cpp",
         "rewrites/path_lower.cpp",
         "syntax/expr.cpp",

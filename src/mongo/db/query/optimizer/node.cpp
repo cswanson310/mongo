@@ -189,13 +189,26 @@ MemoPhysicalNodeId MemoPhysicalDelegatorNode::getNodeId() const {
     return _nodeId;
 }
 
-FilterNode::FilterNode(FilterType filter, ABT child) : Base(std::move(child), std::move(filter)) {
+FilterNode::FilterNode(FilterType filter, ABT child)
+    : FilterNode(false /*isInputVarTemp*/, std::move(filter), std::move(child)) {}
+
+FilterNode::FilterNode(const bool isInputVarTemp, FilterType filter, ABT child)
+    : Base(std::move(child), std::move(filter)), _inputVarIsTemp(isInputVarTemp) {
     assertExprSort(getFilter());
     assertNodeSort(getChild());
 }
 
 bool FilterNode::operator==(const FilterNode& other) const {
-    return getFilter() == other.getFilter() && getChild() == other.getChild();
+    return _inputVarIsTemp == other._inputVarIsTemp && getFilter() == other.getFilter() &&
+        getChild() == other.getChild();
+}
+
+bool FilterNode::isInputVarTemp() const {
+    return _inputVarIsTemp;
+}
+
+void FilterNode::clearInputVarTemp() {
+    _inputVarIsTemp = false;
 }
 
 const FilterType& FilterNode::getFilter() const {

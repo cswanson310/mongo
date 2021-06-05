@@ -394,6 +394,9 @@ TEST(ABTTranslate, ProjectReplaceRoot) {
 }
 
 TEST(ABTTranslate, MatchBasic) {
+    PrefixId prefixId;
+    std::string scanDefName = "collection";
+
     ABT translated = translatePipeline("[{$match: {a: 1, b: 2}}]");
 
     ASSERT_EQ(
@@ -419,6 +422,44 @@ TEST(ABTTranslate, MatchBasic) {
         "        [scan_0]\n"
         "            Source []\n",
         ExplainGenerator::explainV2(translated));
+
+    OptPhaseManager phaseManager({OptPhaseManager::OptPhase::Filter,
+                                  OptPhaseManager::OptPhase::MemoLogicalRewritePhase,
+                                  OptPhaseManager::OptPhase::MemoPhysicalRewritePhase},
+                                 prefixId,
+                                 {{{scanDefName, ScanDefinition{{}, {}}}}},
+                                 DebugInfo::kDefaultForTests);
+
+    ABT optimized = translated;
+    ASSERT_TRUE(phaseManager.optimize(optimized));
+
+    ASSERT_EQ(
+        "RootNode []\n"
+        "|   |   projections:\n"
+        "|   |       scan_0\n"
+        "|   RefBlock: \n"
+        "|       Variable [scan_0]\n"
+        "Filter []\n"
+        "|   EvalFilter []\n"
+        "|   |   PathTraverse []\n"
+        "|   |   PathCompare [Eq] \n"
+        "|   |   Const [2]\n"
+        "|   Variable [evalTemp_1]\n"
+        "Filter []\n"
+        "|   EvalFilter []\n"
+        "|   |   PathTraverse []\n"
+        "|   |   PathCompare [Eq] \n"
+        "|   |   Const [1]\n"
+        "|   Variable [evalTemp_0]\n"
+        "PhysicalScan [{'<root>': 'scan_0', 'a': 'evalTemp_0', 'b': 'evalTemp_1'}, 'collection']\n"
+        "    BindBlock:\n"
+        "        [evalTemp_0]\n"
+        "            Source []\n"
+        "        [evalTemp_1]\n"
+        "            Source []\n"
+        "        [scan_0]\n"
+        "            Source []\n",
+        ExplainGenerator::explainV2(optimized));
 }
 
 TEST(ABTTranslate, MatchPath) {
@@ -1365,8 +1406,10 @@ TEST(ABTTranslate, RangeIndex) {
         translatePipeline("[{$match: {'a': {$gt: 70, $lt: 90}}}]", scanDefName, prefixId);
 
     OptPhaseManager phaseManager(
-        {OptPhaseManager::OptPhase::MemoLogicalRewritePhase,
-         OptPhaseManager::OptPhase::MemoPhysicalRewritePhase},
+        {OptPhaseManager::OptPhase::Filter,
+         OptPhaseManager::OptPhase::MemoLogicalRewritePhase,
+         OptPhaseManager::OptPhase::MemoPhysicalRewritePhase,
+         OptPhaseManager::OptPhase::IndexBoundsLower},
         prefixId,
         {{{scanDefName,
            ScanDefinition{{},
@@ -1432,12 +1475,12 @@ TEST(ABTTranslate, RangeIndex) {
         "|   |       [rid_0]\n"
         "|   |           Source []\n"
         "|   IndexScan [{'<rid>': 'rid_0'}, scanDefName: 'collection', indexDefName: 'index1', "
-        "intervals: {{{('Const [70]', '+Inf')}}}]\n"
+        "intervals: {{{('-Inf', 'Const [90]')}}}]\n"
         "|       BindBlock:\n"
         "|           [rid_0]\n"
         "|               Source []\n"
         "IndexScan [{'<rid>': 'rid_0'}, scanDefName: 'collection', indexDefName: 'index1', "
-        "intervals: {{{('-Inf', 'Const [90]')}}}]\n"
+        "intervals: {{{('Const [70]', '+Inf')}}}]\n"
         "    BindBlock:\n"
         "        [rid_0]\n"
         "            Source []\n",
@@ -1513,8 +1556,11 @@ TEST(ABTTranslate, Index1) {
     {
         // Demonstrate we can use an index over only one field.
         OptPhaseManager phaseManager(
-            {OptPhaseManager::OptPhase::MemoLogicalRewritePhase,
-             OptPhaseManager::OptPhase::MemoPhysicalRewritePhase},
+            {OptPhaseManager::OptPhase::Filter,
+             OptPhaseManager::OptPhase::MemoLogicalRewritePhase,
+             OptPhaseManager::OptPhase::MemoPhysicalRewritePhase,
+             OptPhaseManager::OptPhase::IndexBoundsLower,
+             OptPhaseManager::OptPhase::ConstEvalPost},
             prefixId,
             {{{scanDefName,
                ScanDefinition{
@@ -1532,10 +1578,12 @@ TEST(ABTTranslate, Index1) {
             "|       Variable [scan_0]\n"
             "Filter []\n"
             "|   EvalFilter []\n"
-            "|   |   PathGet [b]\n"
             "|   |   PathTraverse []\n"
             "|   |   PathCompare [Eq] \n"
             "|   |   Const [2]\n"
+            "|   EvalPath []\n"
+            "|   |   PathGet [b]\n"
+            "|   |   PathIdentity []\n"
             "|   Variable [scan_0]\n"
             "BinaryJoin [joinType: Inner, {rid_2}]\n"
             "|   |   Const [true]\n"

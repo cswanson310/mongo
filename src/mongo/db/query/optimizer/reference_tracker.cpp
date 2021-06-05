@@ -393,6 +393,28 @@ struct Collector {
         return result;
     }
 
+    CollectedInfo transport(const ABT&,
+                            const FilterNode& op,
+                            CollectedInfo childResult,
+                            CollectedInfo exprResult) {
+        CollectedInfo result{};
+
+        if (op.isInputVarTemp()) {
+            if (auto evalFilter = op.getFilter().cast<EvalFilter>(); evalFilter != nullptr) {
+                if (auto inputVar = evalFilter->getInput().cast<Variable>(); inputVar != nullptr) {
+                    // Do not propagate input var
+                    childResult.defs.erase(inputVar->name());
+                }
+            }
+        }
+
+        result.merge(std::move(childResult));
+        result.merge(std::move(exprResult));
+
+        result.nodeDefs[&op] = result.defs;
+        return result;
+    }
+
     CollectedInfo transport(const ABT& n,
                             const EvaluationNode& evaluationNode,
                             CollectedInfo childResult,

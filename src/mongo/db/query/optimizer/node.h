@@ -282,14 +282,24 @@ class FilterNode final : public Operator<FilterNode, 2>, public Node {
 
 public:
     FilterNode(FilterType filter, ABT child);
+    FilterNode(const bool isInputVarTemp, FilterType filter, ABT child);
 
     bool operator==(const FilterNode& other) const;
+
+    bool isInputVarTemp() const;
+    void clearInputVarTemp();
 
     const FilterType& getFilter() const;
     FilterType& getFilter();
 
     const ABT& getChild() const;
     ABT& getChild();
+
+private:
+    // For logical filters only: Optionally prevent propagating to parent nodes the input variable
+    // to EvalFilter. This is used to localize usage of a temporary variable introduced during
+    // filter de-composition.
+    bool _inputVarIsTemp;
 };
 
 /**

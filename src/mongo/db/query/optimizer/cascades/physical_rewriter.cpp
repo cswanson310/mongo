@@ -500,6 +500,8 @@ public:
         addProjectionsToProperties(newProps, std::move(references));
 
         ABT physicalFilter = n;
+        // For physical plans, do not restrict input projection, even if temporary.
+        physicalFilter.cast<FilterNode>()->clearInputVarTemp();
         optimizeChild<FilterNode>(_queue, std::move(physicalFilter), std::move(newProps));
     }
 

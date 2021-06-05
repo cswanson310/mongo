@@ -67,7 +67,6 @@ namespace mongo::optimizer::cascades {
                                                                   \
     /* Local-global optimization for GroupBy */                   \
     F(GroupByLocalGlobal)                                         \
-    F(FilterDecompose)                                            \
                                                                   \
     /* Convert filter and evaluation nodes into sargable nodes */ \
     F(SargableFilterConvert)                                      \
