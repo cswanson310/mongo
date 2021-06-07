@@ -38,6 +38,7 @@
 #include "mongo/db/query/optimizer/opt_phase_manager.h"
 #include "mongo/db/query/plan_executor_factory.h"
 #include "mongo/db/query/sbe_stage_builder.h"
+#include "mongo/db/query/yield_policy_callbacks_impl.h"
 
 namespace mongo {
 
@@ -333,6 +334,15 @@ std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> optimizeAndCreateExecutor(
     data.outputs.set(stage_builder::PlanStageSlots::kResult, slotMap.begin()->second);
 
     sbePlan->attachToOperationContext(opCtx);
+
+    auto yieldPolicy =
+        std::make_unique<PlanYieldPolicySBE>(PlanYieldPolicy::YieldPolicy::YIELD_AUTO,
+                                             opCtx->getServiceContext()->getFastClockSource(),
+                                             internalQueryExecYieldIterations.load(),
+                                             Milliseconds{internalQueryExecYieldPeriodMS.load()},
+                                             nullptr,
+                                             std::make_unique<YieldPolicyCallbacksImpl>(nss));
+
     auto planExec =
         uassertStatusOK(plan_executor_factory::make(opCtx,
                                                     nullptr /*cq*/,
@@ -341,7 +351,7 @@ std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> optimizeAndCreateExecutor(
                                                     &collection,
                                                     QueryPlannerParams::Options::DEFAULT,
                                                     nss,
-                                                    nullptr /*yieldPolicy*/));
+                                                    std::move(yieldPolicy)));
     return planExec;
 }
 

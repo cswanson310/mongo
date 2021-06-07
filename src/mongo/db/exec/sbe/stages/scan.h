@@ -130,7 +130,9 @@ private:
     // Used to return a random sample of the collection.
     const bool _useRandomCursor;
 
-    value::FieldAccessorMap _fieldAccessors;
+    // experiment - hash is expensive to compute
+    // value::FieldAccessorMap _fieldAccessors;
+    std::map<std::string, std::unique_ptr<value::OwnedValueAccessor>, std::less<>> _fieldAccessors;
     value::SlotAccessorMap _varAccessors;
     value::SlotAccessor* _seekKeyAccessor{nullptr};
 
@@ -236,7 +238,9 @@ private:
     value::SlotAccessor* _indexKeyAccessor{nullptr};
     value::SlotAccessor* _indexKeyPatternAccessor{nullptr};
 
-    value::FieldAccessorMap _fieldAccessors;
+    // experiment - hash is expensive to compute
+    // value::FieldAccessorMap _fieldAccessors;
+    std::map<std::string, std::unique_ptr<value::OwnedValueAccessor>, std::less<>> _fieldAccessors;
     value::SlotAccessorMap _varAccessors;
 
     size_t _currentRange{std::numeric_limits<std::size_t>::max()};
