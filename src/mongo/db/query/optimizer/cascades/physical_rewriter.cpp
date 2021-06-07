@@ -1494,10 +1494,6 @@ PhysicalRewriter::OptimizeGroupResult PhysicalRewriter::optimizeGroup(const Grou
         }
 
         if (optimized->_cost < costLimit) {
-            // Reduce cost limit result under compatible properties.
-            hasCompatibleProps = true;
-            costLimit = optimized->_cost;
-
             if (_memo.getDebugInfo().hasDebugLevel(3)) {
                 std::cout << "Reducing cost limit: group: " << groupId
                           << ", id: " << optimized->_index
@@ -1509,12 +1505,18 @@ PhysicalRewriter::OptimizeGroupResult PhysicalRewriter::optimizeGroup(const Grou
                 std::cout << "New props: " << ExplainGenerator::explainProperties("new", physProps)
                           << "\n";
             }
+
+            // Reduce cost limit result under compatible properties.
+            hasCompatibleProps = true;
+            costLimit = optimized->_cost;
         }
     }
 
     if (hasCompatibleProps) {
         auto result = optimizeGroup(groupId, physProps, prefixId, costLimit);
-        uassert(0, "We must be able to optimize under less restrictions", result._success);
+        if (!result._success) {
+            uasserted(0, "We must be able to optimize under less restrictions");
+        }
         return result;
     }
 

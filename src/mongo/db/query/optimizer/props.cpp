@@ -77,7 +77,8 @@ bool LimitSkipRequirement::operator==(const LimitSkipRequirement& other) const {
 }
 
 bool LimitSkipRequirement::isCompatibleWith(const LimitSkipRequirement& other) const {
-    return _skip >= other._skip && getAbsoluteLimit() <= other.getAbsoluteLimit();
+    return _skip >= other._skip && getAbsoluteLimit() <= other.getAbsoluteLimit() &&
+        _isEnforced == other._isEnforced;
 }
 
 bool LimitSkipRequirement::mergeWith(const LimitSkipRequirement& other) {
