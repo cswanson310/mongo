@@ -309,23 +309,21 @@ public:
 
         if (requiresScanProjection) {
             // Try removing indexing requirement by performing a seek on the inner side.
-            FieldProjectionMap fieldProjectionMap;
-            fieldProjectionMap._rootProjection = scanProjection;
+            ProjectionName ridProjectionName = _rewriter._ridPrefixId.getNextId("rid");
 
-            ABT physicalJoin =
-                make<BinaryJoinNode>(JoinType::Inner,
-                                     ProjectionNameSet{_rewriter._leftRIDProjectionName},
-                                     Constant::boolean(true),
-                                     make<MemoLogicalDelegatorNode>(_groupId),
-                                     make<MemoLogicalDelegatorNode>(scanGroupId));
+            ABT physicalJoin = make<BinaryJoinNode>(JoinType::Inner,
+                                                    ProjectionNameSet{ridProjectionName},
+                                                    Constant::boolean(true),
+                                                    make<MemoLogicalDelegatorNode>(_groupId),
+                                                    make<MemoLogicalDelegatorNode>(scanGroupId));
 
             ABT& leftChildRef = physicalJoin.cast<BinaryJoinNode>()->getLeftChild();
             ABT& rightChildRef = physicalJoin.cast<BinaryJoinNode>()->getRightChild();
 
             // For now we are propagating the distribution requirements on both sides.
             Properties leftProps = _physProps;
-            setPropertyOverwrite<IndexingRequirement>(
-                leftProps, {IndexReqTarget::Index, _rewriter._leftRIDProjectionName});
+            setPropertyOverwrite<IndexingRequirement>(leftProps,
+                                                      {IndexReqTarget::Index, ridProjectionName});
             getProperty<ProjectionRequirement>(leftProps).getProjections().erase(scanProjection);
 
             Properties rightProps = _physProps;
@@ -338,8 +336,8 @@ public:
             setPropertyOverwrite<RepetitionEstimate>(rightProps,
                                                      RepetitionEstimate{estimatedRepetitions});
 
-            setPropertyOverwrite<IndexingRequirement>(
-                rightProps, {IndexReqTarget::Seek, _rewriter._leftRIDProjectionName});
+            setPropertyOverwrite<IndexingRequirement>(rightProps,
+                                                      {IndexReqTarget::Seek, ridProjectionName});
             setPropertyOverwrite<ProjectionRequirement>(
                 rightProps, ProjectionRequirement(ProjectionNameVector{scanProjection}));
             removeProperty<CollationRequirement>(rightProps);
@@ -722,6 +720,7 @@ public:
 
         const IndexingRequirement& requirements = getPropertyConst<IndexingRequirement>(_physProps);
         const IndexReqTarget indexReqTarget = requirements.getIndexReqTarget();
+        const ProjectionName& reqRIDProjectionName = requirements.getRIDProjectionName();
 
         const ProjectionName& scanProjection =
             getPropertyConst<IndexingAvailability>(_logicalProps).getScanProjection();
@@ -822,13 +821,20 @@ public:
         removeProperty<LimitSkipRequirement>(leftPhysProps);
         removeProperty<LimitSkipRequirement>(rightPhysProps);
 
-        setPropertyOverwrite<IndexingRequirement>(
-            leftPhysProps, {IndexReqTarget::Index, _rewriter._leftRIDProjectionName});
+        ProjectionName leftRIDProjectionName = reqRIDProjectionName.empty()
+            ? _rewriter._ridPrefixId.getNextId("rid")
+            : reqRIDProjectionName;
+        ProjectionName rightRIDProjectionName = (indexReqTarget == IndexReqTarget::Index)
+            ? _rewriter._ridPrefixId.getNextId("rid")
+            : leftRIDProjectionName;
+
+        setPropertyOverwrite<IndexingRequirement>(leftPhysProps,
+                                                  {IndexReqTarget::Index, leftRIDProjectionName});
         setPropertyOverwrite<IndexingRequirement>(rightPhysProps,
                                                   {indexReqTarget,
                                                    (indexReqTarget == IndexReqTarget::Index)
-                                                       ? _rewriter._rightRIDProjectionName
-                                                       : _rewriter._leftRIDProjectionName});
+                                                       ? rightRIDProjectionName
+                                                       : leftRIDProjectionName});
 
         if (leftCollationSpec.empty()) {
             removeProperty<CollationRequirement>(leftPhysProps);
@@ -850,12 +856,11 @@ public:
         if (indexReqTarget == IndexReqTarget::Index) {
             // TODO: consider an optimization to use the smaller side (lower CE) as inner side.
 
-            ABT physicalJoin =
-                make<HashJoinNode>(JoinType::Inner,
-                                   ProjectionNameVector{_rewriter._leftRIDProjectionName},
-                                   ProjectionNameVector{_rewriter._rightRIDProjectionName},
-                                   make<MemoLogicalDelegatorNode>(leftGroupId),
-                                   make<MemoLogicalDelegatorNode>(rightGroupId));
+            ABT physicalJoin = make<HashJoinNode>(JoinType::Inner,
+                                                  ProjectionNameVector{leftRIDProjectionName},
+                                                  ProjectionNameVector{rightRIDProjectionName},
+                                                  make<MemoLogicalDelegatorNode>(leftGroupId),
+                                                  make<MemoLogicalDelegatorNode>(rightGroupId));
 
             optimizeChildren<HashJoinNode>(_queue,
                                            std::move(physicalJoin),
@@ -871,12 +876,11 @@ public:
             setPropertyOverwrite<RepetitionEstimate>(rightPhysProps,
                                                      RepetitionEstimate{estimatedRepetitions});
 
-            ABT physicalJoin =
-                make<BinaryJoinNode>(JoinType::Inner,
-                                     ProjectionNameSet{_rewriter._leftRIDProjectionName},
-                                     Constant::boolean(true),
-                                     make<MemoLogicalDelegatorNode>(leftGroupId),
-                                     make<MemoLogicalDelegatorNode>(rightGroupId));
+            ABT physicalJoin = make<BinaryJoinNode>(JoinType::Inner,
+                                                    ProjectionNameSet{leftRIDProjectionName},
+                                                    Constant::boolean(true),
+                                                    make<MemoLogicalDelegatorNode>(leftGroupId),
+                                                    make<MemoLogicalDelegatorNode>(rightGroupId));
 
             optimizeChildren<BinaryJoinNode>(_queue,
                                              std::move(physicalJoin),
@@ -1259,27 +1263,13 @@ private:
     const Properties& _logicalProps;
 };
 
-PhysicalRewriter::PhysicalRewriter(Memo& memo,
-                                   ProjectionName leftRIDProjectionName,
-                                   ProjectionName rightRIDProjectionName,
-                                   const Metadata& metadata)
-    : PhysicalRewriter(memo,
-                       std::move(leftRIDProjectionName),
-                       std::move(rightRIDProjectionName),
-                       metadata,
-                       deriveCost) {}
+PhysicalRewriter::PhysicalRewriter(Memo& memo, const Metadata& metadata)
+    : PhysicalRewriter(memo, metadata, deriveCost) {}
 
 PhysicalRewriter::PhysicalRewriter(Memo& memo,
-                                   ProjectionName leftRIDProjectionName,
-                                   ProjectionName rightRIDProjectionName,
                                    const Metadata& metadata,
                                    const CostEstimationFn& costFn)
-    : _planExplorationCount(0),
-      _leftRIDProjectionName(std::move(leftRIDProjectionName)),
-      _rightRIDProjectionName(std::move(rightRIDProjectionName)),
-      _memo(memo),
-      _costFn(costFn),
-      _metadata(metadata) {}
+    : _planExplorationCount(0), _memo(memo), _costFn(costFn), _metadata(metadata) {}
 
 static void printCandidateInfo(const ABT& node,
                                const GroupIdType groupId,

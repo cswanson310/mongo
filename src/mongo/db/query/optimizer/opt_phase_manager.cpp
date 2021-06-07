@@ -148,9 +148,6 @@ bool OptPhaseManager::runMemoPhysicalRewrite(const OptPhase phase,
         return false;
     }
 
-    ProjectionName leftRIDProjectionName = _prefixId.getNextId("rid");
-    ProjectionName rightRIDProjectionName = _prefixId.getNextId("rid");
-
     // By default we require centralized result.
     // Also by default we do not require projections: the Root node will add those.
     properties::Properties props = properties::makeProperties(
@@ -159,11 +156,10 @@ bool OptPhaseManager::runMemoPhysicalRewrite(const OptPhase phase,
         properties::setProperty<properties::IndexingRequirement>(
             props,
             properties::IndexingRequirement(properties::IndexReqTarget::Complete,
-                                            leftRIDProjectionName));
+                                            _prefixId.getNextId("rid")));
     }
 
-    PhysicalRewriter rewriter(
-        _memo, std::move(leftRIDProjectionName), std::move(rightRIDProjectionName), _metadata);
+    PhysicalRewriter rewriter(_memo, _metadata);
 
     auto optGroupResult =
         rewriter.optimizeGroup(rootGroupId, std::move(props), _prefixId, CostType::kInfinity);

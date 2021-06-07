@@ -41,6 +41,7 @@
 #include "mongo/db/exec/sbe/stages/scan.h"
 #include "mongo/db/exec/sbe/stages/sort.h"
 #include "mongo/db/exec/sbe/stages/union.h"
+#include "mongo/db/exec/sbe/stages/unique.h"
 #include "mongo/db/exec/sbe/stages/unwind.h"
 #include "mongo/db/query/optimizer/utils.h"
 
@@ -868,8 +869,11 @@ std::unique_ptr<sbe::PlanStage> SBENodeLowering::walk(const IndexScanNode& n, co
                                                       kEmptyPlanNodeId,
                                                       sbe::LockAcquisitionCallback{});
 
+    auto ridUniqueStage = sbe::makeS<sbe::UniqueStage>(
+        std::move(indexStage), sbe::makeSV(ridSlot.value()), kEmptyPlanNodeId);
+
     return sbe::makeS<sbe::LoopJoinStage>(std::move(projectForKeyStringBounds),
-                                          std::move(indexStage),
+                                          std::move(ridUniqueStage),
                                           sbe::makeSV(),
                                           std::move(correlatedSlotsForJoin),
                                           nullptr,

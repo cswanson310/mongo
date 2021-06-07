@@ -848,7 +848,7 @@ TEST(PhysOptimizer, MultiKeyIndex) {
 
     ABT optimized = rootNode;
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(22, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(25, phaseManager.getPhysicalPlanExplorationCount());
 
     // Index2 will be used in reverse direction.
     ASSERT_EQ(
@@ -946,7 +946,7 @@ TEST(PhysOptimizer, CompoundIndex1) {
 
     ABT optimized = rootNode;
     ASSERT_TRUE(phaseManager.optimize(optimized));
-    ASSERT_EQ(46, phaseManager.getPhysicalPlanExplorationCount());
+    ASSERT_EQ(54, phaseManager.getPhysicalPlanExplorationCount());
 
     ASSERT_EQ(
         "RootNode []\n"
@@ -1040,7 +1040,7 @@ TEST(PhysOptimizer, IndexBoundsIntersect) {
         "GroupBy []\n"
         "|   |   groupings:\n"
         "|   |       RefBlock: \n"
-        "|   |           Variable [rid_2]\n"
+        "|   |           Variable [rid_0]\n"
         "|   aggregations:\n"
         "|       [pb]\n"
         "|           FunctionCall [$first]\n"
@@ -1049,7 +1049,7 @@ TEST(PhysOptimizer, IndexBoundsIntersect) {
         "|   |   BindBlock:\n"
         "|   |       [outer_0]\n"
         "|   |           Source []\n"
-        "|   |       [rid_2]\n"
+        "|   |       [rid_0]\n"
         "|   |           Source []\n"
         "|   Filter []\n"
         "|   |   EvalFilter []\n"
@@ -1059,7 +1059,7 @@ TEST(PhysOptimizer, IndexBoundsIntersect) {
         "|   GroupBy []\n"
         "|   |   |   groupings:\n"
         "|   |   |       RefBlock: \n"
-        "|   |   |           Variable [rid_2]\n"
+        "|   |   |           Variable [rid_0]\n"
         "|   |   aggregations:\n"
         "|   |       [count_0]\n"
         "|   |           FunctionCall [$sum]\n"
@@ -1071,29 +1071,29 @@ TEST(PhysOptimizer, IndexBoundsIntersect) {
         "|   |   |   BindBlock:\n"
         "|   |   |       [inner_0]\n"
         "|   |   |           Source []\n"
-        "|   |   |       [rid_2]\n"
+        "|   |   |       [rid_0]\n"
         "|   |   |           Source []\n"
-        "|   |   IndexScan [{'<indexKey> 1': 'inner_0', '<rid>': 'rid_2'}, scanDefName: 'c1', "
+        "|   |   IndexScan [{'<indexKey> 1': 'inner_0', '<rid>': 'rid_0'}, scanDefName: 'c1', "
         "indexDefName: 'index1', intervals: {{{('Const [70]', '+Inf'), ('-Inf', '+Inf')}}}]\n"
         "|   |       BindBlock:\n"
         "|   |           [inner_0]\n"
         "|   |               Source []\n"
-        "|   |           [rid_2]\n"
+        "|   |           [rid_0]\n"
         "|   |               Source []\n"
-        "|   IndexScan [{'<indexKey> 1': 'inner_0', '<rid>': 'rid_2'}, scanDefName: 'c1', "
+        "|   IndexScan [{'<indexKey> 1': 'inner_0', '<rid>': 'rid_0'}, scanDefName: 'c1', "
         "indexDefName: 'index1', intervals: {{{('-Inf', 'Const [90]'), ('-Inf', '+Inf')}}}]\n"
         "|       BindBlock:\n"
         "|           [inner_0]\n"
         "|               Source []\n"
-        "|           [rid_2]\n"
+        "|           [rid_0]\n"
         "|               Source []\n"
-        "IndexScan [{'<indexKey> 1': 'outer_0', '<rid>': 'rid_2'}, scanDefName: 'c1', "
+        "IndexScan [{'<indexKey> 1': 'outer_0', '<rid>': 'rid_0'}, scanDefName: 'c1', "
         "indexDefName: 'index1', intervals: {{{['Const [100]', 'Const [100]'], ('-Inf', "
         "'+Inf')}}}]\n"
         "    BindBlock:\n"
         "        [outer_0]\n"
         "            Source []\n"
-        "        [rid_2]\n"
+        "        [rid_0]\n"
         "            Source []\n",
         ExplainGenerator::explainV2(optimized));
 }

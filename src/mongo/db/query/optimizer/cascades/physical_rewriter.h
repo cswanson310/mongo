@@ -57,15 +57,8 @@ public:
                                                     const properties::Properties& physProps,
                                                     const ABT::reference_type physNodeRef)>;
 
-    PhysicalRewriter(Memo& memo,
-                     ProjectionName leftRIDProjectionName,
-                     ProjectionName rightRIDProjectionName,
-                     const Metadata& metadata);
-    PhysicalRewriter(Memo& memo,
-                     ProjectionName leftRIDProjectionName,
-                     ProjectionName rightRIDProjectionName,
-                     const Metadata& metadata,
-                     const CostEstimationFn& costFn);
+    PhysicalRewriter(Memo& memo, const Metadata& metadata);
+    PhysicalRewriter(Memo& memo, const Metadata& metadata, const CostEstimationFn& costFn);
 
     /**
      * Main entry point for physical optimization.
@@ -101,9 +94,7 @@ private:
     // Number of recursive optimization calls.
     size_t _planExplorationCount;
 
-    // Used to intersect rowIds.
-    ProjectionName _leftRIDProjectionName;
-    ProjectionName _rightRIDProjectionName;
+    PrefixId _ridPrefixId;
 
     // We don't own any of this.
     Memo& _memo;

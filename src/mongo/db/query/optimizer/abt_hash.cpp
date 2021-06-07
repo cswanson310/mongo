@@ -70,7 +70,9 @@ public:
     }
 
     size_t transport(const FilterNode& node, size_t childResult, size_t filterResult) {
-        return computeHashSeq<5>(filterResult, includeChildNodes ? childResult : 0);
+        return computeHashSeq<5>(filterResult,
+                                 std::hash<bool>()(node.isInputVarTemp()),
+                                 includeChildNodes ? childResult : 0);
     }
 
     size_t transport(const EvaluationNode& node, size_t childResult, size_t projectionResult) {

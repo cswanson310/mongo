@@ -47,7 +47,7 @@ public:
     }
 
     bool compare(const FilterNode& lhs, const FilterNode& rhs) const {
-        return lhs.getFilter() == rhs.getFilter() &&
+        return lhs.getFilter() == rhs.getFilter() && lhs.isInputVarTemp() == rhs.isInputVarTemp() &&
             (!includeChildNodes || lhs.getChild() == rhs.getChild());
     }
 
