@@ -127,8 +127,12 @@ void IndexBoundsLowerRewriter::transport(ABT& n, const IndexScanNode& node, ABT&
             true /*isIntersect*/, std::move(conjuncts), innerMap, outerMap));
     }
 
+    // We are updating the node, re-insert it into the phys props map of the manager.
+    auto& nodeToPhysPropsMap = _phaseManager.getNodeToPhysPropsMap();
+    const auto nodeId = nodeToPhysPropsMap.at(n.cast<Node>());
     n = createIntersectOrUnionForIndexLower(
         false /*isIntersect*/, std::move(disjuncts), outerMap, node.getFieldProjectionMap());
+    nodeToPhysPropsMap.emplace(n.cast<Node>(), nodeId);
 }
 
 bool IndexBoundsLowerRewriter::optimize(ABT& n) {

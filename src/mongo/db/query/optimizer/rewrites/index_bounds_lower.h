@@ -30,6 +30,7 @@
 #pragma once
 
 #include "mongo/db/query/optimizer/node.h"
+#include "mongo/db/query/optimizer/opt_phase_manager.h"
 #include "mongo/db/query/optimizer/utils.h"
 
 namespace mongo::optimizer {
@@ -43,7 +44,8 @@ namespace mongo::optimizer {
  */
 class IndexBoundsLowerRewriter {
 public:
-    IndexBoundsLowerRewriter(PrefixId& prefixId) : _prefixId(prefixId) {}
+    IndexBoundsLowerRewriter(OptPhaseManager& phaseManager)
+        : _phaseManager(phaseManager), _prefixId(_phaseManager.getPrefixId()) {}
 
     // The default noop transport.
     template <typename T, typename... Ts>
@@ -59,6 +61,9 @@ private:
                                             const FieldProjectionMap& innerMap,
                                             const FieldProjectionMap& outerMap);
 
+    // We need this in order to copy over the IndexScan properties to any new nodes we generate as
+    // part of the lowering.
+    OptPhaseManager& _phaseManager;
     PrefixId& _prefixId;
 };
 

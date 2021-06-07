@@ -96,6 +96,7 @@ public:
     PrefixId& getPrefixId() const;
 
     const std::unordered_map<const Node*, MemoPhysicalNodeId>& getNodeToPhysPropsMap() const;
+    std::unordered_map<const Node*, MemoPhysicalNodeId>& getNodeToPhysPropsMap();
 
 private:
     bool hasPhase(const OptPhase phase) const;

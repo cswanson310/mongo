@@ -219,7 +219,7 @@ bool OptPhaseManager::optimize(ABT& input) {
     }
 
     if (!runStructuralPhase(
-            IndexBoundsLowerRewriter{_prefixId}, OptPhase::IndexBoundsLower, env, input)) {
+            IndexBoundsLowerRewriter{*this}, OptPhase::IndexBoundsLower, env, input)) {
         return false;
     }
     if (!runStructuralPhase(PathLowering{env}, OptPhase::PathLower, env, input)) {
@@ -267,6 +267,10 @@ PrefixId& OptPhaseManager::getPrefixId() const {
 
 const std::unordered_map<const Node*, MemoPhysicalNodeId>& OptPhaseManager::getNodeToPhysPropsMap()
     const {
+    return _nodeToPhysPropsMap;
+}
+
+std::unordered_map<const Node*, MemoPhysicalNodeId>& OptPhaseManager::getNodeToPhysPropsMap() {
     return _nodeToPhysPropsMap;
 }
 
